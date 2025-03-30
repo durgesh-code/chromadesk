@@ -44,8 +44,9 @@ jobs:
       - name: Install Python Build Dependencies & Project
         run: |
           python -m pip install --upgrade pip
-          # Install build tools and project dependencies
-          pip install build setuptools wheel python-pyproject-metadata
+          # Install build tools
+          pip install build setuptools wheel 
+          # Install project and its dependencies
           pip install . # Installs dependencies from pyproject.toml
 
       - name: Build AppImage using build.sh
