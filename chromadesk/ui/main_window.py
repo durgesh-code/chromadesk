@@ -3,13 +3,14 @@ import logging  # Import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Slot, QTimer
-from PySide6.QtGui import QPalette, QPixmap, QIcon
+from PySide6.QtCore import QSize, Qt, Slot, QTimer, QUrl
+from PySide6.QtGui import QPalette, QPixmap, QIcon, QDesktopServices
 from PySide6.QtWidgets import QCheckBox  # Added QMessageBox
 from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMessageBox, QPushButton,
-                               QSizePolicy, QVBoxLayout, QWidget, QStatusBar)
+                               QSizePolicy, QVBoxLayout, QWidget, QStatusBar,
+                               QStyle)
 
 # Use .. to go up one level from ui/ to chromadesk/ then into core/
 from ..core import bing as core_bing
@@ -103,6 +104,17 @@ class MainWindow(QMainWindow):
         # Apply Button
         self.apply_button = QPushButton("Apply Wallpaper")
 
+        # Info Button
+        self.info_button = QPushButton()
+        info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        self.info_button.setIcon(info_icon)
+        self.info_button.setToolTip("Created by AnAnT")
+
+        # Button Layout (Apply and Info side-by-side)
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.apply_button)
+        button_layout.addWidget(self.info_button)
+
         self.daily_update_checkbox = QCheckBox("Enable Daily Automatic Updates")
 
         # Add widgets to left layout
@@ -115,7 +127,13 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.history_list)
         left_layout.addWidget(self.daily_update_checkbox)
         left_layout.addStretch()
-        left_layout.addWidget(self.apply_button)
+        left_layout.addLayout(button_layout) # Add the horizontal button layout
+
+        # --- Adjust Info Button Size --- 
+        # Make info button square, matching the height of the apply button
+        apply_button_height = self.apply_button.sizeHint().height()
+        self.info_button.setFixedSize(apply_button_height, apply_button_height)
+        # -------------------------------
 
         # Right Panel (Preview)
         right_panel = QWidget()
@@ -171,6 +189,7 @@ class MainWindow(QMainWindow):
         )  # Connect region change
         self.apply_button.clicked.connect(self.on_apply_clicked)  # Connect apply button
         self.daily_update_checkbox.stateChanged.connect(self.on_daily_update_toggled)
+        self.info_button.clicked.connect(self.open_author_github) # Connect info button
         # TODO: Connect URL input returnPressed/editingFinished if needed
 
     def _load_initial_settings(self):
@@ -714,6 +733,15 @@ class MainWindow(QMainWindow):
             self.daily_update_checkbox.blockSignals(False)
         finally:
             self.daily_update_checkbox.setEnabled(True) # Re-enable checkbox
+
+    @Slot()
+    def open_author_github(self):
+        """Opens the author's GitHub profile in the default web browser."""
+        logger.info("Opening author GitHub page...")
+        url = QUrl("https://github.com/anantdark")
+        if not QDesktopServices.openUrl(url):
+            logger.error(f"Could not open URL: {url.toString()}")
+            self.update_status_message("Error: Could not open browser.")
 
 
 # --- Need urlparse for custom URL extension guessing ---
