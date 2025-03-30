@@ -6,6 +6,9 @@ import subprocess
 import shutil
 from pathlib import Path
 
+# Import config module directly
+from ..core import config as core_config
+
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
@@ -52,40 +55,83 @@ def _run_systemctl(command: list, check: bool = False, capture: bool = False) ->
          logger.error(f"Unexpected error running systemctl: {e}", exc_info=True)
          return None
 
-def _get_python_executable() -> str:
-    """Gets the path to the currently running Python executable."""
-    # sys.executable is usually reliable, especially in venvs
-    path = sys.executable
-    if not path:
-         logger.warning("Could not determine Python executable path from sys.executable. Falling back to 'python3'.")
-         path = "python3" # Less reliable fallback
-    logger.debug(f"Using Python executable: {path}")
-    return str(Path(path).resolve()) # Return absolute path
+def _get_python_executable() -> str | None:
+    """Gets the preferred Python executable path, prioritizing venv.
+    Returns None if no suitable executable is found.
+    """
+    project_root = _get_project_root()
+    venv_python = None
+
+    # 1. Check for virtual environment Python
+    if project_root:
+        venv_path = Path(project_root) / ".venv" / "bin" / "python"
+        if venv_path.is_file():
+            try:
+                venv_python = str(venv_path.resolve(strict=True))
+                logger.debug(f"Using virtual environment Python: {venv_python}")
+                return venv_python
+            except Exception as e:
+                logger.warning(f"Found venv python {venv_path} but failed to resolve: {e}")
+        else:
+            logger.debug("Virtual environment Python not found at expected location.")
+
+    # 2. Check for system 'python3' in PATH
+    system_python3 = shutil.which('python3')
+    if system_python3:
+        logger.debug(f"Using system python3: {system_python3}")
+        return system_python3
+
+    # 3. Check for system 'python' in PATH
+    system_python = shutil.which('python')
+    if system_python:
+        logger.debug(f"Using system python: {system_python}")
+        return system_python
+
+    # 4. REMOVED Fallback to sys.executable 
+    #    This was causing it to pick up the Cursor AppImage path.
+    #    If we reach here, we haven't found a suitable Python.
+    # sys_executable_path = sys.executable
+    # if sys_executable_path:
+    #     logger.warning(f"Could not find venv or system Python. Falling back to sys.executable: {sys_executable_path}")
+    #     logger.warning("This might be incorrect if running inside an unrelated AppImage (e.g., an IDE).")
+    #     return str(Path(sys_executable_path).resolve())
+
+    # 5. Absolute failure
+    logger.error("Could not determine any suitable Python executable path (checked venv, python3, python).")
+    return None
 
 def _get_script_path() -> str:
-    """Gets the absolute path to the headless.py script."""
-    # Assumes headless.py is in the parent directory of this 'services' dir
+    """Gets the absolute path to the main.py script."""
+    # Assumes main.py is in the parent directory of this 'services' dir
     try:
-        script_path = Path(__file__).parent.parent / "headless.py"
+        script_path = Path(__file__).parent.parent / "main.py"
         abs_path = str(script_path.resolve(strict=True))
-        logger.debug(f"Found headless script path: {abs_path}")
+        logger.debug(f"Found main script path: {abs_path}")
         return abs_path
     except FileNotFoundError:
-         logger.error("headless.py not found relative to manager.py!")
+         logger.error("main.py not found relative to manager.py!")
          return "" # Should cause failure later
 
-def _get_project_root() -> str:
-     """Gets the absolute path to the project root directory."""
+def _get_project_root() -> str | None:
+     """Gets the absolute path to the project root directory.
+     Returns None if resolution fails.
+     """
      # Assumes project root is the parent of the 'chromadesk' package directory
-     # where headless.py resides (i.e., parent of parent of this file's dir)
+     # where main.py resides (i.e., parent of parent of this file's dir)
      try:
         root_path = Path(__file__).parent.parent.parent
-        abs_path = str(root_path.resolve(strict=True))
-        logger.debug(f"Using project root (working directory): {abs_path}")
-        return abs_path
+        # Use resolve() without strict=True initially
+        abs_path = str(root_path.resolve())
+        # Basic check: does pyproject.toml exist?
+        if (root_path / "pyproject.toml").is_file():
+             logger.debug(f"Using project root (working directory): {abs_path}")
+             return abs_path
+        else:
+             logger.warning(f"Determined path {abs_path} does not appear to be project root (pyproject.toml missing). Returning None.")
+             return None
      except Exception as e:
           logger.error(f"Could not determine project root directory: {e}")
-          return "." # Fallback, might cause issues
+          return None
 
 
 def _get_dbus_address() -> str:
@@ -97,116 +143,151 @@ def _get_dbus_address() -> str:
         logger.debug(f"Found DBUS_SESSION_BUS_ADDRESS: {dbus_addr}")
     return dbus_addr
 
-# --- Public API ---
-
-def _get_venv_path() -> str:
-    """Gets the path to the active venv directory using sys.prefix."""
-    try:
-        # sys.prefix usually points to the venv directory when running inside one
-        venv_path = Path(sys.prefix).resolve()
-
-        # Basic sanity checks to see if it looks like a venv
-        # Check for pyvenv.cfg or a common lib/pythonX.Y/site-packages structure
-        is_likely_venv = (venv_path / "pyvenv.cfg").is_file() or \
-                         list(venv_path.glob("lib/python*/site-packages"))
-
-        # If it doesn't look like a venv or points to system paths, something is wrong
-        if not is_likely_venv or str(venv_path).startswith(('/usr', '/System', '/Library')):
-             logger.error(f"sys.prefix ({venv_path}) does not look like a virtualenv directory. Cannot reliably determine venv path.")
-             # Provide more context for debugging
-             logger.error(f"  sys.prefix = {sys.prefix}")
-             logger.error(f"  sys.base_prefix = {sys.base_prefix}") # Often points to system python
-             logger.error(f"  sys.executable = {sys.executable}")
-             return "" # Return empty to signal failure
-
-        abs_path = str(venv_path)
-        logger.debug(f"Determined venv path using sys.prefix: {abs_path}")
-        return abs_path
-    except Exception as e:
-         logger.error(f"Could not determine venv path using sys.prefix: {e}", exc_info=True)
-         return ""
-
 def _get_template_dir() -> Path:
-    """Finds the template directory, checking near executable or in share dir."""
-    # Path relative to this file (for development)
+    """Finds the template directory, checking sys._MEIPASS or relative paths."""
+    # Check PyInstaller temp dir first
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Templates are bundled into a 'templates' subdir by --add-data
+        meipass_path = Path(sys._MEIPASS) / "templates"
+        if meipass_path.is_dir():
+            logger.debug(f"Found templates in MEIPASS: {meipass_path}")
+            return meipass_path
+        else:
+             logger.debug(f"Templates dir not found in MEIPASS at expected location.")
+
+    # Fallback for development: relative to this file
     dev_path = Path(__file__).parent / "templates"
     if dev_path.is_dir():
          logger.debug(f"Found templates in development path: {dev_path}")
          return dev_path
 
-    # Path relative to installation prefix (for installed app/AppDir)
-    # Assumes templates are installed to 'share/chromadesk/templates' relative to prefix
-    try:
-        prefix = Path(sys.prefix)
-        installed_path = prefix / "share" / "chromadesk" / "templates"
-        if installed_path.is_dir():
-             logger.debug(f"Found templates in installed path: {installed_path}")
-             return installed_path
-    except Exception: # Catch errors if sys.prefix is weird
-         pass
-
     logger.error("Template directory not found!")
-    # Raise an error or return a Path that will fail later?
     raise FileNotFoundError("ChromaDesk systemd templates not found.")
 
 
 def create_unit_files() -> bool:
-    """Creates the .service and .timer files from templates."""
-    logger.info("Creating systemd unit files...")
-    # --- Add @@VENV_PATH@@ to placeholders ---
-    placeholders = {
-        "@@PYTHON_EXEC@@": _get_python_executable(),
-        "@@SCRIPT_PATH@@": _get_script_path(),
-        "@@WORKING_DIR@@": _get_project_root(),
-        "@@DBUS_ADDRESS@@": _get_dbus_address(),
-        "@@VENV_PATH@@": _get_venv_path(), # Add this line
-    }
+    """Creates the .service and .timer files using AppImage path, config, or fallback."""
+    logger.info("Creating/Updating systemd unit files...")
 
-    # Check if paths were found (include venv_path check)
-    if not all(placeholders.values()): # Check if any value is empty
-         logger.error("Could not determine necessary paths (python, script, workdir, venv) for unit files. Aborting.")
+    exec_command = ""
+    working_dir = ""
+    dbus_address = _get_dbus_address()
+
+    # --- Determine Execution Command and Working Directory --- 
+
+    # Priority 1: Check if running from an AppImage
+    appimage_path = os.environ.get('APPIMAGE')
+    if appimage_path and Path(appimage_path).is_file():
+        logger.info(f"Detected running from AppImage: {appimage_path}")
+        exec_command = f'\"{appimage_path}\" --headless' # Quote path in case of spaces
+        working_dir = str(Path.home()) # Use home dir as working dir for AppImage service
+        logger.info(f"Using AppImage path for ExecStart. WorkingDirectory={working_dir}")
+
+    # Priority 2: Check config file for manually installed path
+    if not exec_command: # Only check if AppImage wasn't detected
+        try:
+            installed_appimage_path = core_config.get_setting('State', 'installed_appimage_path')
+            if installed_appimage_path and Path(installed_appimage_path).is_file():
+                 logger.info(f"Using installed AppImage path from config: {installed_appimage_path}")
+                 exec_command = f'\"{installed_appimage_path}\" --headless' # Quote path
+                 working_dir = str(Path.home()) # Use home dir for installed AppImage service
+                 logger.info(f"Using installed path for ExecStart. WorkingDirectory={working_dir}")
+            else:
+                 if installed_appimage_path:
+                      logger.warning(f"Found path in config ('{installed_appimage_path}'), but it's not a valid file. Falling back.")
+                 else:
+                      logger.info("No valid installed AppImage path found in config. Checking fallback.")
+        except Exception as e:
+             logger.error(f"Error reading installed_appimage_path from config: {e}. Checking fallback.")
+
+    # Priority 3: Fallback to Python executable and script path (development mode)
+    if not exec_command:
+        logger.info("Using development mode (python executable + script path) for ExecStart.")
+        current_executable = _get_python_executable()
+        script_path = _get_script_path()
+        derived_project_root = _get_project_root()
+
+        if not current_executable or not script_path or not derived_project_root:
+            logger.critical("Could not determine necessary paths (python/script/root) for fallback execution. Aborting unit file creation.")
+            return False
+        
+        exec_command = f'\"{current_executable}\" \"{script_path}\" --headless' # Quote paths
+        working_dir = derived_project_root # Use project root for dev mode
+        logger.info(f"Using dev paths for ExecStart. WorkingDirectory={working_dir}")
+
+    # Sanity check - should have command and dir by now
+    if not exec_command or not working_dir:
+         logger.critical("Failed to determine ExecStart command or WorkingDirectory. Aborting unit file creation.")
          return False
+
+    logger.info(f"Final determined ExecStart: {exec_command}")
+    logger.info(f"Final determined WorkingDirectory: {working_dir}")
+    # -----------------------------------------------------------
 
     # Ensure systemd user directory exists
     try:
-        TEMPLATE_DIR = _get_template_dir() # Use the helper function
+        SYSTEMD_USER_DIR.mkdir(parents=True, exist_ok=True)
+        TEMPLATE_DIR = _get_template_dir() # Need for timer template
         logger.debug(f"Ensured systemd user directory exists: {SYSTEMD_USER_DIR}")
     except FileNotFoundError:
          logger.critical("Cannot create unit files because template directory was not found.")
          return False
-
-    files_to_create = {
-        SERVICE_FILE: TEMPLATE_DIR / f"{SERVICE_FILE}.in",
-        TIMER_FILE: TEMPLATE_DIR / f"{TIMER_FILE}.in",
-    }
+    except OSError as e:
+        logger.error(f"Error creating systemd directory {SYSTEMD_USER_DIR}: {e}")
+        return False
 
     all_success = True
-    for filename, template_path in files_to_create.items():
-        dest_path = SYSTEMD_USER_DIR / filename
-        logger.debug(f"Processing template {template_path} to {dest_path}")
+
+    # --- Create .service file directly --- 
+    service_dest_path = SYSTEMD_USER_DIR / SERVICE_FILE
+    logger.debug(f"Generating {service_dest_path} directly")
+    service_content = f"""[Unit]
+Description=ChromaDesk Daily Wallpaper Update
+After=network.target graphical-session.target
+Requires=graphical-session.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={working_dir}
+Environment="DBUS_SESSION_BUS_ADDRESS={dbus_address}"
+ExecStart={exec_command}
+
+[Install]
+WantedBy=default.target
+"""
+    try:
+        service_dest_path.write_text(service_content)
+        logger.info(f"Successfully wrote unit file: {service_dest_path}")
+    except OSError as e:
+        logger.error(f"Failed to write unit file {service_dest_path}: {e}")
+        all_success = False
+    except Exception as e:
+        logger.error(f"Unexpected error writing service file {service_dest_path}: {e}", exc_info=True)
+        all_success = False
+
+    # --- Create .timer file from template --- 
+    timer_filename = TIMER_FILE
+    if all_success and 'TEMPLATE_DIR' in locals() and TEMPLATE_DIR:
+        timer_template_path = TEMPLATE_DIR / f"{timer_filename}.in"
+        timer_dest_path = SYSTEMD_USER_DIR / timer_filename
+        logger.debug(f"Processing template {timer_template_path} to {timer_dest_path}")
         try:
-            if not template_path.is_file():
-                logger.error(f"Template file not found: {template_path}")
+            if not timer_template_path.is_file():
+                logger.error(f"Template file not found: {timer_template_path}")
                 all_success = False
-                continue # Skip to next file
-
-            # Read template content
-            content = template_path.read_text()
-
-            # Substitute placeholders
-            for key, value in placeholders.items():
-                content = content.replace(key, value)
-
-            # Write final unit file
-            dest_path.write_text(content)
-            logger.info(f"Successfully wrote unit file: {dest_path}")
-
+            else:
+                timer_content = timer_template_path.read_text()
+                timer_dest_path.write_text(timer_content)
+                logger.info(f"Successfully wrote unit file: {timer_dest_path}")
         except OSError as e:
-            logger.error(f"Failed to read template or write unit file {dest_path}: {e}")
+            logger.error(f"Failed to read template or write unit file {timer_dest_path}: {e}")
             all_success = False
         except Exception as e:
-             logger.error(f"Unexpected error processing template {template_path}: {e}", exc_info=True)
+             logger.error(f"Unexpected error processing template {timer_template_path}: {e}", exc_info=True)
              all_success = False
+    elif all_success:
+        logger.error("TEMPLATE_DIR not determined correctly, cannot create timer file.")
+        all_success = False
 
     # Reload systemd daemon if files were possibly changed
     if all_success:
@@ -214,8 +295,7 @@ def create_unit_files() -> bool:
         result = _run_systemctl(['daemon-reload'])
         if result is None:
              logger.error("Failed to reload systemd daemon after creating unit files.")
-             # This might not be fatal, but enabling might fail
-             return False # Indicate potential issue
+             return False
     else:
          logger.error("One or more unit files failed to be created.")
 
@@ -258,6 +338,54 @@ def disable_timer() -> bool:
         if result is None: # Check if _run_systemctl indicated command failure
              logger.error(f"Failed to execute disable command for systemd timer {TIMER_FILE}.")
         return False
+
+def remove_service_files() -> bool:
+    """Removes the .service and .timer files and reloads the systemd daemon."""
+    logger.info(f"Removing systemd unit files: {SERVICE_FILE}, {TIMER_FILE}")
+    service_path = SYSTEMD_USER_DIR / SERVICE_FILE
+    timer_path = SYSTEMD_USER_DIR / TIMER_FILE
+    files_found = False
+    all_removed = True
+
+    # Remove service file
+    if service_path.is_file():
+        files_found = True
+        try:
+            service_path.unlink()
+            logger.info(f"Removed {service_path}")
+        except OSError as e:
+            logger.error(f"Failed to remove {service_path}: {e}")
+            all_removed = False
+    else:
+        logger.debug(f"Service file {service_path} not found, skipping removal.")
+
+    # Remove timer file
+    if timer_path.is_file():
+        files_found = True
+        try:
+            timer_path.unlink()
+            logger.info(f"Removed {timer_path}")
+        except OSError as e:
+            logger.error(f"Failed to remove {timer_path}: {e}")
+            all_removed = False
+    else:
+        logger.debug(f"Timer file {timer_path} not found, skipping removal.")
+
+    # Reload daemon if we removed any files
+    if files_found and all_removed:
+        logger.info("Reloading systemd user daemon after removing unit files...")
+        result = _run_systemctl(['daemon-reload'])
+        if result is None:
+            logger.warning("Failed to reload systemd daemon after removing files. Manual reload might be needed.")
+            # Still return True as file removal succeeded, but log the warning
+    elif files_found and not all_removed:
+         logger.error("Failed to remove one or more systemd unit files.")
+    elif not files_found:
+         logger.info("No systemd unit files found to remove.")
+         # If no files were found, we consider it a success in terms of removal
+         all_removed = True
+
+    return all_removed
 
 def is_timer_active() -> bool:
     """Checks if the timer unit is currently active."""

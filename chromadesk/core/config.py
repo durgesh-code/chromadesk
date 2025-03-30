@@ -23,6 +23,7 @@ DEFAULT_SETTINGS = {
     },
     'State': {
         'last_update_date': '', # Stores YYYY-MM-DD of last successful Bing update
+        'installed_appimage_path': '' # Stores absolute path where AppImage was installed
     }
 }
 
@@ -132,6 +133,28 @@ def set_setting(section, key, value):
     else:
          logging.error(f"Failed to save setting [{section}] {key} = {value}.")
 
+def delete_config_file() -> bool:
+    """Deletes the application's configuration file."""
+    if not CONFIG_FILE.is_file():
+        logging.warning(f"Config file {CONFIG_FILE} already doesn't exist. Cannot delete.")
+        return True # Consider it a success if it's already gone
+
+    try:
+        CONFIG_FILE.unlink()
+        logging.info(f"Successfully deleted config file: {CONFIG_FILE}")
+        # Optionally, try removing the directory if it's empty, but be cautious
+        # try:
+        #     CONFIG_DIR.rmdir() # Fails if not empty
+        #     logging.info(f"Successfully deleted empty config directory: {CONFIG_DIR}")
+        # except OSError:
+        #     pass # Directory wasn't empty or other error, ignore
+        return True
+    except OSError as e:
+        logging.error(f"Error deleting config file {CONFIG_FILE}: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error deleting config file {CONFIG_FILE}: {e}", exc_info=True)
+        return False
 
 # Example Usage (can be tested independently)
 if __name__ == "__main__":

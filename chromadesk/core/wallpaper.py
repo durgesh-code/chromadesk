@@ -3,14 +3,86 @@ import subprocess
 import logging
 from pathlib import Path
 import shutil
+import notify2
+import dbus
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 # Define GNOME settings schemas and keys
 SCHEMA_BACKGROUND = "org.gnome.desktop.background"
 KEY_PICTURE_URI = "picture-uri"
 KEY_PICTURE_URI_DARK = "picture-uri-dark" # Set both for light/dark theme consistency
 KEY_PICTURE_OPTIONS = "picture-options" # Controls how image is scaled (e.g., 'zoom', 'scaled', 'centered')
+
+def _send_notification_notify2(title: str, message: str, icon_path: str | None = None):
+    """Sends a notification using the notify2 library."""
+    try:
+        notify2.init("ChromaDesk")
+        icon = icon_path if icon_path and Path(icon_path).exists() else "dialog-information" # Fallback icon
+        notification = notify2.Notification(title, message, icon)
+        notification.set_urgency(notify2.URGENCY_LOW)
+        notification.set_timeout(5000) # milliseconds
+        notification.show()
+        logger.info(f"Notification sent via notify2: '{title}'")
+        return True
+    except ImportError:
+        logger.debug("notify2 library not found, falling back.")
+        return False
+    except dbus.exceptions.DBusException as e:
+        logger.warning(f"DBusException while sending notification via notify2: {e}")
+        logger.warning("This might happen if the DBus session bus is unavailable (e.g., running outside graphical session without correct env vars).")
+        return False
+    except Exception as e:
+        logger.error(f"Error sending notification via notify2: {e}", exc_info=True)
+        return False
+
+def _send_notification_dbus(title: str, message: str, icon_name: str = "dialog-information"):
+    """Sends a notification using raw dbus-python (fallback)."""
+    try:
+        bus = dbus.SessionBus()
+        notify_proxy = bus.get_object('org.freedesktop.Notifications', '/org/freedesktop/Notifications')
+        notify_interface = dbus.Interface(notify_proxy, 'org.freedesktop.Notifications')
+
+        # Parameters for Notify method:
+        # app_name, replaces_id, app_icon, summary, body, actions, hints, expire_timeout
+        notify_interface.Notify(
+            "ChromaDesk",      # app_name
+            dbus.UInt32(0),    # replaces_id (0 means new notification)
+            icon_name,         # app_icon (use a standard Freedesktop icon name)
+            title,             # summary (title)
+            message,           # body
+            dbus.Array([], signature='s'), # actions
+            dbus.Dictionary({}, signature='sv'), # hints
+            dbus.Int32(5000)    # expire_timeout (milliseconds)
+        )
+        logger.info(f"Notification sent via dbus-python: '{title}'")
+        return True
+    except dbus.exceptions.DBusException as e:
+        logger.warning(f"DBusException while sending notification via dbus-python: {e}")
+        logger.warning("Ensure DBus session bus is running and accessible.")
+        return False
+    except Exception as e:
+        logger.error(f"Error sending notification via dbus-python: {e}", exc_info=True)
+        return False
+
+def send_notification(title: str, message: str):
+    """Attempts to send a desktop notification, preferring notify2."""
+    logger.debug(f"Attempting to send notification: '{title}' - '{message}'")
+    
+    # Potential icon path (relative to this file? Needs thought)
+    # For now, let notify2/dbus use standard icons or its default
+    # icon_path = Path(__file__).parent.parent / "data" / "icons" / "io.github.anantdark.chromadesk.png"
+    icon_path_str = None # str(icon_path.resolve()) if icon_path.exists() else None
+
+    # Try notify2 first
+    if _send_notification_notify2(title, message, icon_path_str):
+        return
+
+    # Fallback to dbus-python using a standard icon name
+    if _send_notification_dbus(title, message, icon_name="dialog-information"): # Or maybe use "preferences-desktop-wallpaper"?
+        return
+
+    logger.warning("Failed to send notification using all available methods.")
 
 def set_gnome_wallpaper(image_path: Path) -> bool:
     """

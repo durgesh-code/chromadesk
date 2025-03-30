@@ -207,6 +207,7 @@ pyinstaller --name="chromadesk" \
             --windowed \
             --onefile \
             --add-data="data:data" \
+            --add-data="chromadesk/services/templates:templates" \
             --icon="data/icons/io.github.anantdark.chromadesk.png" \
             --distpath="$BUILD_DIR/usr/bin" \
             chromadesk/main.py
@@ -221,10 +222,18 @@ if [ $? -eq 0 ]; then
         echo -e "${GREEN}Making executable...${NC}"
         chmod +x "$BUILD_DIR/usr/bin/chromadesk"
         
+        # --- Embed AppImage Path --- #
+        # Create a file inside the AppDir containing the intended absolute path to the final AppImage
+        # APPIMAGE_FINAL_NAME="chromadesk-$VERSION-x86_64.AppImage"
+        # Assume build script is run from project root where AppImage will be created
+        # APPIMAGE_FINAL_PATH="$PWD/$APPIMAGE_FINAL_NAME"
+        # echo "$APPIMAGE_FINAL_PATH" > "$BUILD_DIR/appimage_exec_path.txt"
+        # echo "DEBUG: Wrote intended AppImage path ($APPIMAGE_FINAL_PATH) to $BUILD_DIR/appimage_exec_path.txt" # Debug
+        # ------------------------ #
+
         # Create a symbolic link to the executable in the root directory as AppRun
         echo -e "${YELLOW}Creating AppRun symlink...${NC}"
         ln -sf "usr/bin/chromadesk" "$BUILD_DIR/AppRun"
-        chmod +x "$BUILD_DIR/AppRun"
         
         # Display version information
         echo -e "${GREEN}Built version: ${YELLOW}$VERSION${NC}"

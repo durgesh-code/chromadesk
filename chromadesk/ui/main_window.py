@@ -2,15 +2,31 @@
 import logging  # Import logging
 import sys
 from pathlib import Path
+# Add chromadesk import for version
+import chromadesk
 
 from PySide6.QtCore import QSize, Qt, Slot, QTimer, QUrl
 from PySide6.QtGui import QPalette, QPixmap, QIcon, QDesktopServices
 from PySide6.QtWidgets import QCheckBox  # Added QMessageBox
-from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
-                               QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QPushButton,
-                               QSizePolicy, QVBoxLayout, QWidget, QStatusBar,
-                               QStyle)
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+    QStatusBar,
+    QStyle,
+    QGroupBox, # Added QGroupBox
+)
 
 # Use .. to go up one level from ui/ to chromadesk/ then into core/
 from ..core import bing as core_bing
@@ -117,6 +133,33 @@ class MainWindow(QMainWindow):
 
         self.daily_update_checkbox = QCheckBox("Enable Daily Automatic Updates")
 
+        # --- Status & Config Group ---
+        self.status_group_box = QGroupBox("Status & Configuration")
+        status_layout = QVBoxLayout()
+
+        self.version_label = QLabel("Version: N/A")
+        self.config_region_label = QLabel("Region: N/A")
+        self.config_history_label = QLabel("History Limit: N/A")
+        self.config_dir_label = QLabel("Directory: N/A")
+        self.timer_status_label = QLabel("Daily Timer: N/A")
+        # self.last_change_label = QLabel("Last Change: N/A") # Placeholder - requires new logic
+
+        self.uninstall_button = QPushButton("Uninstall ChromaDesk")
+        self.uninstall_button.setStyleSheet("color: red; font-weight: bold;") # Red, bold text
+
+        status_layout.addWidget(self.version_label)
+        status_layout.addWidget(self.config_region_label)
+        status_layout.addWidget(self.config_history_label)
+        status_layout.addWidget(self.config_dir_label)
+        status_layout.addWidget(self.timer_status_label)
+        # status_layout.addWidget(self.last_change_label)
+        status_layout.addSpacing(10) # Add some space
+        status_layout.addWidget(self.uninstall_button)
+        status_layout.addStretch() # Push content to the top of the group box
+
+        self.status_group_box.setLayout(status_layout)
+        # ---------------------------
+
         # Add widgets to left layout
         left_layout.addWidget(self.source_label)
         left_layout.addWidget(self.source_combo)
@@ -126,11 +169,12 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.history_label)
         left_layout.addWidget(self.history_list)
         left_layout.addWidget(self.daily_update_checkbox)
+        left_layout.addSpacing(15) # Add padding before the status box
+        left_layout.addWidget(self.status_group_box) # Add the new group box
         left_layout.addStretch()
         left_layout.addLayout(button_layout) # Add the horizontal button layout
 
         # --- Adjust Info Button Size --- 
-        # Make info button square, matching the height of the apply button
         apply_button_height = self.apply_button.sizeHint().height()
         self.info_button.setFixedSize(apply_button_height, apply_button_height)
         # -------------------------------
@@ -190,6 +234,10 @@ class MainWindow(QMainWindow):
         self.apply_button.clicked.connect(self.on_apply_clicked)  # Connect apply button
         self.daily_update_checkbox.stateChanged.connect(self.on_daily_update_toggled)
         self.info_button.clicked.connect(self.open_author_github) # Connect info button
+        self.uninstall_button.clicked.connect(self.on_uninstall_clicked) # Connect uninstall button
+        # Connect signals that should trigger a status update
+        self.region_combo.currentIndexChanged.connect(self._update_status_info)
+        self.daily_update_checkbox.stateChanged.connect(self._update_status_info)
         # TODO: Connect URL input returnPressed/editingFinished if needed
 
     def _load_initial_settings(self):
@@ -236,6 +284,9 @@ class MainWindow(QMainWindow):
                 f"Initial daily update state loaded: {'Enabled' if current_state else 'Disabled'}"
             )
             # --- End Daily Update State ---
+
+            # --- Update Status Info --- # Call *after* loading other settings
+            self._update_status_info() # Initial population of status labels
 
         except Exception as e:
             logger.error("Error loading initial settings", exc_info=True)
@@ -742,6 +793,132 @@ class MainWindow(QMainWindow):
         if not QDesktopServices.openUrl(url):
             logger.error(f"Could not open URL: {url.toString()}")
             self.update_status_message("Error: Could not open browser.")
+
+    @Slot()
+    def on_uninstall_clicked(self):
+        """Handles the Uninstall button click: Confirms, removes service/config, closes app."""
+        logger.warning("Uninstall button clicked.")
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Uninstall",
+            "Are you sure you want to uninstall ChromaDesk?\n\n"
+            "This will:\n"
+            "- Disable and remove the daily update service/timer.\n"
+            "- Delete the configuration file.\n"
+            "- The application will close.\n\n"
+            "(Wallpaper images will NOT be deleted.)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No, # Default button
+        )
+
+        if reply == QMessageBox.StandardButton.No:
+            logger.info("Uninstall cancelled by user.")
+            return
+
+        logger.info("Proceeding with uninstallation...")
+        self.uninstall_button.setEnabled(False)
+        self.uninstall_button.setText("Uninstalling...")
+        self.update_status_message("Uninstalling...", 0)
+        QApplication.processEvents()
+
+        errors = []
+
+        # 1. Disable and remove systemd timer/service
+        try:
+            logger.info("Disabling timer...")
+            if not services_manager.disable_timer():
+                logger.warning("Failed to disable timer (might already be disabled).")
+            logger.info("Removing service files...")
+            if not services_manager.remove_service_files():
+                 errors.append("Could not remove the systemd service/timer files.\nManual removal might be needed.")
+                 logger.error("Failed to remove service files.")
+
+        except Exception as e:
+            logger.error("Error during service/timer removal", exc_info=True)
+            errors.append("An error occurred removing systemd files.")
+
+        # 2. Delete configuration file
+        try:
+            logger.info("Deleting config file...")
+            if not core_config.delete_config_file():
+                errors.append("Could not delete the configuration file.\nManual removal might be needed.")
+                logger.error("Failed to delete config file.")
+
+        except Exception as e:
+            logger.error("Error during config file deletion", exc_info=True)
+            errors.append("An error occurred deleting the configuration file.")
+
+        # 3. Report results and close
+        if errors:
+            error_message = "Uninstallation completed with errors:\n\n- " + "\n- ".join(errors)
+            logger.error(f"Uninstallation errors: {errors}")
+            QMessageBox.warning(self, "Uninstallation Issues", error_message)
+        else:
+            logger.info("Uninstallation successful.")
+            QMessageBox.information(self, "Uninstallation Complete", "ChromaDesk service and configuration removed successfully.")
+
+        logger.info("Closing application after uninstall.")
+        self.close() # Close the application window
+
+    # --- New Method --- #
+    def _update_status_info(self):
+         """Fetches current status and config, updates status labels."""
+         logger.debug("Updating status info labels...")
+
+         # Version
+         try:
+             self.version_label.setText(f"Version: {chromadesk.__version__}")
+         except Exception as e:
+             logger.error("Failed to get version", exc_info=True)
+             self.version_label.setText("Version: Error")
+
+         # Config Region
+         try:
+             region_code = core_config.get_setting("Settings", "region", fallback="N/A")
+             region_name = region_code
+             for name, code in BING_REGIONS.items():
+                 if code == region_code:
+                     region_name = name
+                     break
+             self.config_region_label.setText(f"Region: {region_name} ({region_code})")
+         except Exception as e:
+             logger.error("Failed to get region config", exc_info=True)
+             self.config_region_label.setText("Region: Error")
+
+         # Config History Limit
+         try:
+             history_limit = core_config.get_setting("Settings", "keep_history", fallback="N/A")
+             self.config_history_label.setText(f"History Limit: {history_limit}")
+         except Exception as e:
+             logger.error("Failed to get history limit config", exc_info=True)
+             self.config_history_label.setText("History Limit: Error")
+
+         # Config Directory
+         try:
+             wallpaper_dir = core_history.get_wallpaper_dir()
+             dir_text = str(wallpaper_dir) if wallpaper_dir else 'Not Set'
+             self.config_dir_label.setText(f"Directory: {dir_text}")
+             self.config_dir_label.setToolTip(dir_text) # Add tooltip for full path
+         except Exception as e:
+             logger.error("Failed to get wallpaper directory", exc_info=True)
+             self.config_dir_label.setText("Directory: Error")
+
+         # Timer Status
+         try:
+             timer_enabled = services_manager.is_timer_enabled()
+             self.timer_status_label.setText(f"Daily Timer: {'Active' if timer_enabled else 'Inactive'}")
+         except Exception as e:
+             logger.error("Failed to get timer status", exc_info=True)
+             self.timer_status_label.setText("Daily Timer: Error")
+
+         # Last Change (Placeholder)
+         # try:
+         #     # Future logic to get last change status
+         #     self.last_change_label.setText("Last Change: N/A")
+         # except Exception as e:
+         #     logger.error("Failed to get last change status", exc_info=True)
+         #     self.last_change_label.setText("Last Change: Error")
 
 
 # --- Need urlparse for custom URL extension guessing ---
