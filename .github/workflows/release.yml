@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-release:
     name: Build and Release ChromaDesk AppImage
-    # Use an older LTS release for better GLIBC compatibility
+    # Use an older LTS release for better GLIBC compatibility.
     runs-on: ubuntu-20.04
 
     steps:
