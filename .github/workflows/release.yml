@@ -29,8 +29,17 @@ jobs:
             patchelf \
             desktop-file-utils \
             libfuse2 \
-            fakeroot \
-            appimagetool
+            fakeroot
+            # appimagetool is not in standard repos, download manually
+
+      - name: Download and Install appimagetool
+        run: |
+          APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          echo "Downloading appimagetool from ${APPIMAGETOOL_URL}..."
+          wget -q "${APPIMAGETOOL_URL}" -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          sudo mv appimagetool.AppImage /usr/local/bin/appimagetool
+          echo "appimagetool installed to /usr/local/bin/appimagetool"
 
       - name: Install Python Build Dependencies & Project
         run: |
