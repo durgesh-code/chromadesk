@@ -30,7 +30,9 @@ jobs:
             patchelf \
             desktop-file-utils \
             libfuse2 \
-            fakeroot
+            fakeroot \
+            libdbus-1-dev \
+            pkg-config # Ensure pkg-config is installed
             # appimagetool is not in standard repos, download manually
 
       - name: Download and Install appimagetool
