@@ -1,0 +1,96 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0"] # Require a modern setuptools
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chromadesk"
+version = "0.1.0" # Initial version
+authors = [
+  { name="Anant Patel", email="anantpatel2000@pm.me" }, 
+]
+description = "Daily Bing/Custom Wallpaper Changer for GNOME"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPLv3"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GPLv3", # Match license above
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: Gnome",
+    "Topic :: Desktop Environment",
+    "Development Status :: 3 - Alpha", 
+]
+dependencies = [
+    "requests",
+    "Pillow",
+    # PySide6 is needed, specify version if necessary
+    # Ensure range matches what worked during install, e.g., "PySide6>=6.5,<6.8"
+    "PySide6", 
+]
+
+# Define where setuptools can find the package code
+[tool.setuptools.packages.find]
+where = ["."] # Look in the project root directory
+include = ["chromadesk*"] # Include the main package directory
+# exclude = ["tests*"] # Exclude tests if you add them later
+
+# Define the GUI script entry point for tools like pip/setuptools to use
+[project.scripts]
+chromadesk-gui = "chromadesk.main:main"
+
+# Define the entry point specifically for GUI apps (used by installers/desktop files)
+[project.gui-scripts]
+chromadesk = "chromadesk.main:main"
+
+# Optional: Define URL for project homepage, bug tracker etc.
+[project.urls]
+Homepage = "https://github.com/anantdark/chromadesk"
+Issues = "https://github.com/anantdark/chromadesk/issues"
+
+[tool.python-appimage.build]
+# Main entry point (must match a key in [project.gui-scripts] or [project.scripts])
+script = "chromadesk"
+
+# List direct Python dependencies (optional if defined well in [project].dependencies)
+# Explicitly listing the main package helps ensure it's found
+packages = ["chromadesk"]
+
+python_version = "3.12" 
+
+# Files to include from your project source tree
+include = [
+    { source = "data/io.github.anantdark.chromadesk.desktop", destination = "." }, 
+    { source = "data/icons/io.github.anantdark.chromadesk.png", destination = "chromadesk.png" }, 
+    { source = "chromadesk/services/templates/", destination = "usr/share/chromadesk/templates/" }
+]
+
+# Explicitly list shared libraries (.so files) that might be missed
+# Start with common ones for PySide6 on Linux
+libraries = [
+    "libQt6Widgets.so.6",
+    "libQt6Gui.so.6",
+    "libQt6Core.so.6",
+    "libQt6DBus.so.6", 
+    "platforms/libqxcb.so", # Platform plugin
+    "libglib-2.0.so.0", 
+    "libgobject-2.0.so.0",
+    "libX11.so.6", 
+    "libxcb.so.1",
+    "libfontconfig.so.1", 
+    "libfreetype.so.6"
+]
+# Add more based on ldd or runtime errors if needed
+
+# Explicitly list system binaries called via subprocess
+binaries = [
+    "/usr/bin/gsettings",
+    "/usr/bin/notify-send",
+    "/bin/systemctl", # Usually /bin or /usr/bin
+    "/bin/sh"
+]
+
+# Optional: Exclude large/unnecessary libraries if identified later
+# exclude_libraries = []
+
+

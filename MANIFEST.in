@@ -1,0 +1,24 @@
+# Include data files
+include data/io.github.anantdark.chromadesk.desktop
+recursive-include data/icons *.png
+recursive-include data *.desktop
+
+# Include service templates
+recursive-include chromadesk/services/templates *.in *.service *.timer
+
+# Include documentation
+include README.md
+include LICENSE
+
+# Include build scripts
+include build.sh
+include build_appimage.sh
+include build_appimage_simple.sh
+include build_direct.sh
+
+# Exclude Python cache files
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .*.swp
+global-exclude .DS_Store 

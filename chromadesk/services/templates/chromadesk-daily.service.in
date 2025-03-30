@@ -1,0 +1,19 @@
+# ~/.config/systemd/user/chromadesk-daily.service
+# Template managed by ChromaDesk application
+
+[Unit]
+Description=ChromaDesk Daily Wallpaper Update
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+# Environment variable for DBUS (still needed)
+Environment="DBUS_SESSION_BUS_ADDRESS=@@DBUS_ADDRESS@@"
+# WorkingDirectory might still be useful for relative paths within the script itself
+WorkingDirectory=@@WORKING_DIR@@
+
+# Execute using sh -c to activate venv then run script path
+ExecStart=/bin/sh -c '. @@VENV_PATH@@/bin/activate && @@VENV_PATH@@/bin/python3 @@SCRIPT_PATH@@'
+
+[Install]
+WantedBy=default.target

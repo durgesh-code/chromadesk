@@ -1,0 +1,13 @@
+# ~/.config/systemd/user/chromadesk-daily.timer
+# Template managed by ChromaDesk application (Simplified)
+
+[Unit]
+Description=ChromaDesk Daily Wallpaper Update Timer
+
+[Timer]
+# Run once a day (typically at midnight)
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
