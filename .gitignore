@@ -172,3 +172,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Project specific
+python.AppImage
+*.AppImage
+warn-*.txt
+xref-*.html
+
+# Local test files & downloaded wallpapers
+wallpapers/
+downloads/

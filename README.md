@@ -29,15 +29,21 @@ cd chromadesk
 pip install -e .
 ```
 
-### Option 2: Using Standalone Executable (No Installation Required)
+### Option 2: Using Standalone Executable or AppImage (No Installation Required)
 
-1. Download the latest `chromadesk` executable from the [Releases](https://github.com/anantdark/chromadesk/releases) page
+1. Download the latest `chromadesk` executable or AppImage from the [Releases](https://github.com/anantdark/chromadesk/releases) page
 2. Make it executable:
+   
    ```bash
+   chmod +x chromadesk-x.y.z-x86_64.AppImage
+   # or
    chmod +x chromadesk
    ```
 3. Run it:
+   
    ```bash
+   ./chromadesk-x.y.z-x86_64.AppImage
+   # or
    ./chromadesk
    ```
 
@@ -70,6 +76,7 @@ chromadesk
 ```
 
 From the main interface, you can:
+
 - View and apply the current Bing wallpaper
 - Browse your wallpaper history
 - Configure automatic updates
@@ -107,28 +114,40 @@ ChromaDesk integrates with systemd for scheduled operations:
 
 The application will install and configure these units automatically when you enable scheduled updates.
 
-## Building the Standalone Executable
+## Building the Standalone Executable or AppImage
 
-The project includes a build script that simplifies the process of creating a standalone executable:
+The project includes a build script that simplifies the process of creating a standalone executable or AppImage:
 
 ```bash
 # Make the build script executable (if not already)
 chmod +x build.sh
 
-# Run the build script
+# Run the build script with default options (creates standalone executable)
 ./build.sh
+
+# Build an AppImage
+./build.sh --appimage
+
+# Get help on available options
+./build.sh --help
 ```
 
 The script will:
+
 1. Create/activate a virtual environment
 2. Install required dependencies
 3. Build a standalone executable using PyInstaller
-4. Place the built application in the `dist/` directory
+4. Optionally create an AppImage with proper desktop integration
+5. Place the built artifacts in the appropriate directories
 
 After building, you can run the application with:
 
 ```bash
-./dist/chromadesk
+# For standalone executable
+./dist/usr/bin/chromadesk
+
+# For AppImage
+./chromadesk-x.y.z-x86_64.AppImage
 ```
 
 ### Build Script Options
@@ -139,13 +158,54 @@ The build script (`build.sh`) automates the entire build process with a simple i
 - Manages the Python virtual environment
 - Installs the required build tools
 - Creates a standalone executable with all dependencies included
-- Generates the desktop file for system integration
+- Generates proper desktop integration files
+- Optionally creates an AppImage compatible with AppImageLauncher
+
+Available options:
+
+- `--help` or `-h`: Show help information
+- `--version-update VER`: Update version numbers to specified version
+- `--build-only`: Update version numbers without building
+- `--appimage`: Create an AppImage after building the executable
+
+### Updating the Version
+
+To update the version of the application before building:
+
+```bash
+# Update version and build the executable
+./build.sh --version-update 0.2.0
+
+# Update version, build executable and create AppImage
+./build.sh --version-update 0.2.0 --appimage
+
+# Update version only, without building
+./build.sh --version-update 0.2.0 --build-only
+```
+
+This will update the version number in both:
+
+- `chromadesk/__init__.py`
+- `pyproject.toml`
+
+## Testing
+
+ChromaDesk includes a test suite to ensure functionality works as expected:
+
+```bash
+# Run all tests
+python -m unittest discover tests
+
+# Run a specific test file
+python -m unittest tests.test_basics
+```
 
 ## Troubleshooting
 
 ### Mesa Intel Graphics Warning
 
 If you see a message like:
+
 ```
 MESA-INTEL: warning: Performance support disabled, consider sysctl dev.i915.perf_stream_paranoid=0
 ```
@@ -154,14 +214,18 @@ This is a warning from the Intel graphics driver and doesn't affect functionalit
 
 1. **Ignore it**: The warning doesn't affect the application's functionality
 2. **Suppress it temporarily**: Run the application with the environment variable:
+   
    ```bash
    MESA_DEBUG=silent python -m chromadesk
    ```
 3. **Fix it permanently**: If you have administrator privileges, you can set:
+   
    ```bash
    sudo sysctl dev.i915.perf_stream_paranoid=0
    ```
+   
    To make the change permanent, add the following line to `/etc/sysctl.conf`:
+   
    ```
    dev.i915.perf_stream_paranoid=0
    ```
@@ -177,6 +241,8 @@ This is a warning from the Intel graphics driver and doesn't affect functionalit
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on how to contribute to this project.
 
 ## License
 
