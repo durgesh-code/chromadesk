@@ -31,32 +31,56 @@ jobs:
       - name: Run Black
         id: black
         run: |
-          black --check . || echo "::set-output name=black_failed::true"
+          black --check . 2>&1 | tee black_output.txt || echo "black_failed=true" >> $GITHUB_ENV
 
       - name: Run Flake8
         id: flake8
         run: |
-          flake8 . || echo "::set-output name=flake8_failed::true"
+          flake8 . 2>&1 | tee flake8_output.txt || echo "flake8_failed=true" >> $GITHUB_ENV
 
       - name: Run isort
         id: isort
         run: |
-          isort --check-only . || echo "::set-output name=isort_failed::true"
+          isort --check-only . 2>&1 | tee isort_output.txt || echo "isort_failed=true" >> $GITHUB_ENV
 
       - name: Run mypy
         id: mypy
         run: |
-          mypy . || echo "::set-output name=mypy_failed::true"
+          mypy . 2>&1 | tee mypy_output.txt || echo "mypy_failed=true" >> $GITHUB_ENV
 
       - name: Post Comment on PR if any check fails
-        if: steps.black.outputs.black_failed == 'true' || steps.flake8.outputs.flake8_failed == 'true' || steps.isort.outputs.isort_failed == 'true' || steps.mypy.outputs.mypy_failed == 'true'
+        if: env.black_failed == 'true' || env.flake8_failed == 'true' || env.isort_failed == 'true' || env.mypy_failed == 'true'
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
             :warning: **Code quality checks failed!**
-            - Black: ${{ steps.black.outputs.black_failed == 'true' && 'Failed' || 'Passed' }}
-            - Flake8: ${{ steps.flake8.outputs.flake8_failed == 'true' && 'Failed' || 'Passed' }}
-            - Isort: ${{ steps.isort.outputs.isort_failed == 'true' && 'Failed' || 'Passed' }}
-            - Mypy: ${{ steps.mypy.outputs.mypy_failed == 'true' && 'Failed' || 'Passed' }}
+            <details>
+            <summary>Black Errors</summary>
+            ```
+            $(cat black_output.txt)
+            ```
+            </details>
+            <details>
+            <summary>Flake8 Errors</summary>
+            ```
+            $(cat flake8_output.txt)
+            ```
+            </details>
+            <details>
+            <summary>Isort Errors</summary>
+            ```
+            $(cat isort_output.txt)
+            ```
+            </details>
+            <details>
+            <summary>Mypy Errors</summary>
+            ```
+            $(cat mypy_output.txt)
+            ```
+            </details>
             Please fix these issues before merging.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail the job if any check fails
+        if: env.black_failed == 'true' || env.flake8_failed == 'true' || env.isort_failed == 'true' || env.mypy_failed == 'true'
+        run: exit 1
