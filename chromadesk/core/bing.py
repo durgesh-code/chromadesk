@@ -11,9 +11,12 @@ BING_BASE_URL = "https://www.bing.com"
 # Reference: https://github.com/binghp/binghp.github.io/blob/main/src/api/common.js
 # Available markets can be found via https://www.bing.com/account/general (Region/Language settings)
 # Common ones: en-US, en-GB, en-CA, en-AU, de-DE, fr-FR, ja-JP, zh-CN
-BING_API_URL = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt={region}"
+BING_API_URL = (
+    "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt={region}"
+)
 
-def fetch_bing_wallpaper_info(region='en-US'):
+
+def fetch_bing_wallpaper_info(region="en-US"):
     """
     Fetches wallpaper metadata from the Bing HPImageArchive API.
 
@@ -30,35 +33,39 @@ def fetch_bing_wallpaper_info(region='en-US'):
     try:
         # Add a user-agent to potentially avoid blocking
         headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36'
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36"
         }
-        response = requests.get(url, headers=headers, timeout=10) # 10 second timeout
+        response = requests.get(url, headers=headers, timeout=10)  # 10 second timeout
         response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
 
         data = response.json()
 
-        if not data or 'images' not in data or not data['images']:
+        if not data or "images" not in data or not data["images"]:
             logger.error("No images found in Bing API response.")
             return None
 
-        image_data = data['images'][0]
+        image_data = data["images"][0]
 
         # Construct full URL
-        image_url = image_data.get('url')
+        image_url = image_data.get("url")
         if not image_url:
-             logger.error("No 'url' field found in Bing image data.")
-             return None
-        full_image_url = urljoin(BING_BASE_URL, image_url) # Handles relative URLs correctly
+            logger.error("No 'url' field found in Bing image data.")
+            return None
+        full_image_url = urljoin(
+            BING_BASE_URL, image_url
+        )  # Handles relative URLs correctly
 
         # Extract other useful info
         result = {
-            'url': image_url, # Sometimes useful to have the relative one too
-            'full_url': full_image_url,
-            'date': image_data.get('startdate', ''), # YYYYMMDD format
-            'copyright': image_data.get('copyright', 'N/A'),
-            'title': image_data.get('title', 'N/A')
+            "url": image_url,  # Sometimes useful to have the relative one too
+            "full_url": full_image_url,
+            "date": image_data.get("startdate", ""),  # YYYYMMDD format
+            "copyright": image_data.get("copyright", "N/A"),
+            "title": image_data.get("title", "N/A"),
         }
-        logger.info(f"Successfully fetched Bing info: Date={result['date']}, Title={result['title']}")
+        logger.info(
+            f"Successfully fetched Bing info: Date={result['date']}, Title={result['title']}"
+        )
         return result
 
     except requests.exceptions.RequestException as e:
@@ -70,6 +77,7 @@ def fetch_bing_wallpaper_info(region='en-US'):
     except Exception as e:
         logger.error(f"An unexpected error occurred during Bing fetch: {e}")
         return None
+
 
 # Example Usage (can be tested independently)
 if __name__ == "__main__":
@@ -88,7 +96,7 @@ if __name__ == "__main__":
 
     # Test another region
     print("\n--- Testing Another Region (de-DE) ---")
-    info_de = fetch_bing_wallpaper_info(region='de-DE')
+    info_de = fetch_bing_wallpaper_info(region="de-DE")
     if info_de:
         print(f"Date: {info_de['date']}")
         print(f"Title: {info_de['title']}")
@@ -99,7 +107,7 @@ if __name__ == "__main__":
 
     # Test invalid region (expect failure)
     print("\n--- Testing Invalid Region (xx-XX) ---")
-    info_xx = fetch_bing_wallpaper_info(region='xx-XX')
+    info_xx = fetch_bing_wallpaper_info(region="xx-XX")
     if not info_xx:
         print("Correctly failed to fetch info for invalid region xx-XX.")
     else:

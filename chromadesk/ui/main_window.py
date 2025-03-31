@@ -2,6 +2,7 @@
 import logging  # Import logging
 import sys
 from pathlib import Path
+
 # Add chromadesk import for version
 import chromadesk
 
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QStatusBar,
     QStyle,
-    QGroupBox, # Added QGroupBox
+    QGroupBox,  # Added QGroupBox
 )
 
 # Use .. to go up one level from ui/ to chromadesk/ then into core/
@@ -122,7 +123,9 @@ class MainWindow(QMainWindow):
 
         # Info Button
         self.info_button = QPushButton()
-        info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        info_icon = self.style().standardIcon(
+            QStyle.StandardPixmap.SP_MessageBoxInformation
+        )
         self.info_button.setIcon(info_icon)
         self.info_button.setToolTip("Created by AnAnT")
 
@@ -145,7 +148,9 @@ class MainWindow(QMainWindow):
         # self.last_change_label = QLabel("Last Change: N/A") # Placeholder - requires new logic
 
         self.uninstall_button = QPushButton("Uninstall ChromaDesk")
-        self.uninstall_button.setStyleSheet("color: red; font-weight: bold;") # Red, bold text
+        self.uninstall_button.setStyleSheet(
+            "color: red; font-weight: bold;"
+        )  # Red, bold text
 
         status_layout.addWidget(self.version_label)
         status_layout.addWidget(self.config_region_label)
@@ -153,9 +158,9 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.config_dir_label)
         status_layout.addWidget(self.timer_status_label)
         # status_layout.addWidget(self.last_change_label)
-        status_layout.addSpacing(10) # Add some space
+        status_layout.addSpacing(10)  # Add some space
         status_layout.addWidget(self.uninstall_button)
-        status_layout.addStretch() # Push content to the top of the group box
+        status_layout.addStretch()  # Push content to the top of the group box
 
         self.status_group_box.setLayout(status_layout)
         # ---------------------------
@@ -169,12 +174,12 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.history_label)
         left_layout.addWidget(self.history_list)
         left_layout.addWidget(self.daily_update_checkbox)
-        left_layout.addSpacing(15) # Add padding before the status box
-        left_layout.addWidget(self.status_group_box) # Add the new group box
+        left_layout.addSpacing(15)  # Add padding before the status box
+        left_layout.addWidget(self.status_group_box)  # Add the new group box
         left_layout.addStretch()
-        left_layout.addLayout(button_layout) # Add the horizontal button layout
+        left_layout.addLayout(button_layout)  # Add the horizontal button layout
 
-        # --- Adjust Info Button Size --- 
+        # --- Adjust Info Button Size ---
         apply_button_height = self.apply_button.sizeHint().height()
         self.info_button.setFixedSize(apply_button_height, apply_button_height)
         # -------------------------------
@@ -201,19 +206,25 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(right_panel)
         self.setStatusBar(QStatusBar(self))
         self.setStatusBar(self.statusBar())
-        self.status_bar = QStatusBar(self) # Keep a reference if needed
+        self.status_bar = QStatusBar(self)  # Keep a reference if needed
         self.setStatusBar(self.status_bar)
 
         # Create a label for messages
-        self.status_label = QLabel("Ready") # Initial text
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # Center align text
+        self.status_label = QLabel("Ready")  # Initial text
+        self.status_label.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )  # Center align text
 
         # Optional: Add padding via stylesheet (adjust values as needed)
-        self.status_label.setStyleSheet("QLabel { padding-left: 10px; padding-right: 10px; padding-bottom: 3px; padding-top: 3px; }")
+        self.status_label.setStyleSheet(
+            "QLabel { padding-left: 10px; padding-right: 10px; padding-bottom: 3px; padding-top: 3px; }"
+        )
         # Alternatively, apply to status bar: self.status_bar.setStyleSheet("QStatusBar { padding: 3px; }")
 
         # Add the label permanently to the status bar, allowing it to stretch
-        self.status_bar.addWidget(self.status_label, stretch=1) # stretch=1 makes it take available space
+        self.status_bar.addWidget(
+            self.status_label, stretch=1
+        )  # stretch=1 makes it take available space
 
         # Clear the initial "Ready" message after a few seconds
         QTimer.singleShot(3000, lambda: self.status_label.setText(""))
@@ -233,8 +244,10 @@ class MainWindow(QMainWindow):
         )  # Connect region change
         self.apply_button.clicked.connect(self.on_apply_clicked)  # Connect apply button
         self.daily_update_checkbox.stateChanged.connect(self.on_daily_update_toggled)
-        self.info_button.clicked.connect(self.open_author_github) # Connect info button
-        self.uninstall_button.clicked.connect(self.on_uninstall_clicked) # Connect uninstall button
+        self.info_button.clicked.connect(self.open_author_github)  # Connect info button
+        self.uninstall_button.clicked.connect(
+            self.on_uninstall_clicked
+        )  # Connect uninstall button
         # Connect signals that should trigger a status update
         self.region_combo.currentIndexChanged.connect(self._update_status_info)
         self.daily_update_checkbox.stateChanged.connect(self._update_status_info)
@@ -286,7 +299,7 @@ class MainWindow(QMainWindow):
             # --- End Daily Update State ---
 
             # --- Update Status Info --- # Call *after* loading other settings
-            self._update_status_info() # Initial population of status labels
+            self._update_status_info()  # Initial population of status labels
 
         except Exception as e:
             logger.error("Error loading initial settings", exc_info=True)
@@ -321,13 +334,17 @@ class MainWindow(QMainWindow):
         logger.info("Populating combined history list...")
         self.history_list.clear()
         try:
-            keep_count = int(core_config.get_setting('Settings', 'keep_history', fallback='7'))
-            history_files = core_history.get_sorted_wallpaper_history(max_items=keep_count)
+            keep_count = int(
+                core_config.get_setting("Settings", "keep_history", fallback="7")
+            )
+            history_files = core_history.get_sorted_wallpaper_history(
+                max_items=keep_count
+            )
             logger.info(f"Core history function returned {len(history_files)} file(s)")
 
             if not history_files:
                 logger.info("No history files found, adding placeholder.")
-                item = QListWidgetItem("No history found") # No icon for placeholder
+                item = QListWidgetItem("No history found")  # No icon for placeholder
                 item.setData(Qt.ItemDataRole.UserRole, None)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 self.history_list.addItem(item)
@@ -335,22 +352,28 @@ class MainWindow(QMainWindow):
 
             for file_path in history_files:
                 # --- Create Icon ---
-                icon = QIcon() # Default empty icon
+                icon = QIcon()  # Default empty icon
                 try:
                     pixmap = QPixmap(str(file_path))
                     if not pixmap.isNull():
-                        scaled_pixmap = pixmap.scaled(THUMBNAIL_SIZE,
-                                                    Qt.AspectRatioMode.KeepAspectRatio,
-                                                    Qt.TransformationMode.SmoothTransformation)
+                        scaled_pixmap = pixmap.scaled(
+                            THUMBNAIL_SIZE,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
                         icon = QIcon(scaled_pixmap)
                     else:
-                        logger.warning(f"Failed to load pixmap for thumbnail: {file_path.name}")
+                        logger.warning(
+                            f"Failed to load pixmap for thumbnail: {file_path.name}"
+                        )
                 except Exception as thumb_err:
-                    logger.warning(f"Error creating thumbnail for {file_path.name}: {thumb_err}")
+                    logger.warning(
+                        f"Error creating thumbnail for {file_path.name}: {thumb_err}"
+                    )
                 # --------------------
 
                 # --- Create List Item with Icon and Text ---
-                item = QListWidgetItem(icon, file_path.name) # Pass icon to constructor
+                item = QListWidgetItem(icon, file_path.name)  # Pass icon to constructor
                 # -------------------------------------------
                 item.setData(Qt.ItemDataRole.UserRole, file_path)
                 self.history_list.addItem(item)
@@ -381,7 +404,7 @@ class MainWindow(QMainWindow):
                 if pixmap.isNull():
                     # Pixmap failed to load (invalid image file, permissions, etc.)
                     logger.error(f"QPixmap failed to load image: {image_path}")
-                    self.preview_label.setPixmap(QPixmap()) # Clear visual preview
+                    self.preview_label.setPixmap(QPixmap())  # Clear visual preview
                     self.preview_label.setText(
                         f"Preview Error:\nInvalid or unreadable image\n({image_path.name})"
                     )
@@ -389,30 +412,32 @@ class MainWindow(QMainWindow):
                 else:
                     # Successfully loaded, store the original unscaled pixmap
                     self.current_unscaled_pixmap = pixmap
-                    self.current_preview_path = image_path # Store path for reference
+                    self.current_preview_path = image_path  # Store path for reference
                     logger.debug(f"Stored original pixmap for {image_path.name}")
                     # Trigger the scaling and display logic
                     self._scale_and_display_preview()
 
             except Exception as e:
                 # Catch any unexpected errors during pixmap loading
-                logger.error(f"Unexpected error loading pixmap for {image_path}", exc_info=True)
+                logger.error(
+                    f"Unexpected error loading pixmap for {image_path}", exc_info=True
+                )
                 self.preview_label.setPixmap(QPixmap())
                 self.preview_label.setText(
                     f"Preview Error:\nUnexpected issue loading\n({image_path.name})"
                 )
-                self.current_unscaled_pixmap = None # Ensure stored pixmap is cleared
+                self.current_unscaled_pixmap = None  # Ensure stored pixmap is cleared
         else:
             # Path was None, not a Path object, or file doesn't exist
             logger.debug("No valid image path provided, clearing preview.")
             self.preview_label.setPixmap(QPixmap())
             # Keep self.current_unscaled_pixmap as None
             if image_path is None:
-                 self.preview_label.setText("No Preview Available")
-            else: # Path was invalid or file not found
-                 self.preview_label.setText(
-                     f"Preview Error:\nFile not found\n({image_path})"
-                 )
+                self.preview_label.setText("No Preview Available")
+            else:  # Path was invalid or file not found
+                self.preview_label.setText(
+                    f"Preview Error:\nFile not found\n({image_path})"
+                )
 
     def fetch_and_display_bing(self, region_code=None):
         """Fetches today's Bing info for the selected region and updates the preview."""
@@ -430,7 +455,7 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()  # Allow UI to update
 
         bing_info = core_bing.fetch_bing_wallpaper_info(region=region_code)
-        self.update_status_message("") # Clear fetching message
+        self.update_status_message("")  # Clear fetching message
 
         if not bing_info or not bing_info.get("full_url"):
             logger.error("Failed to fetch Bing wallpaper info.")
@@ -483,8 +508,12 @@ class MainWindow(QMainWindow):
                 # Since we downloaded a new Bing image, refresh history list and maybe cleanup
                 if success:
                     self.update_status_message("Bing image downloaded.", 3000)
-                    self.populate_history() # Refresh history list
-                    keep_count = int(core_config.get_setting('Settings', 'keep_history', fallback='7'))
+                    self.populate_history()  # Refresh history list
+                    keep_count = int(
+                        core_config.get_setting(
+                            "Settings", "keep_history", fallback="7"
+                        )
+                    )
                     core_history.cleanup_wallpaper_history(keep=keep_count)
             else:
                 logger.error(f"Failed to download image from {bing_info['full_url']}")
@@ -496,7 +525,7 @@ class MainWindow(QMainWindow):
                     "Download Error",
                     f"Could not download the Bing image from:\n{bing_info['full_url']}",
                 )
-                    
+
     # Add this new method to the MainWindow class:
     def resizeEvent(self, event):
         """Handles window resize events to rescale the preview image."""
@@ -539,14 +568,16 @@ class MainWindow(QMainWindow):
                 Qt.TransformationMode.SmoothTransformation,
             )
             self.preview_label.setPixmap(scaled_pixmap)
-            self.preview_label.setText("") # Clear any error text
+            self.preview_label.setText("")  # Clear any error text
             # logger.debug("Preview scaled and displayed.") # Optional debug log
         else:
             # No valid original pixmap to scale, ensure preview is clear/shows text
             self.preview_label.setPixmap(QPixmap())
-            if self.current_preview_path: # If there was supposed to be an image
-                self.preview_label.setText(f"Preview Error:\nCould not display\n({self.current_preview_path.name})")
-            else: # No image selected
+            if self.current_preview_path:  # If there was supposed to be an image
+                self.preview_label.setText(
+                    f"Preview Error:\nCould not display\n({self.current_preview_path.name})"
+                )
+            else:  # No image selected
                 self.preview_label.setText("No Preview Available")
 
     # --- UI Slots (Event Handlers) ---
@@ -637,8 +668,14 @@ class MainWindow(QMainWindow):
             if self.current_preview_path and self.current_preview_path.is_file():
                 image_to_set = self.current_preview_path
                 if not image_to_set:
-                    QMessageBox.warning(self, "Apply Error", "No valid wallpaper image is currently selected or displayed.")
-                    self.update_status_message("Apply failed: No image selected", 5000) # Show status too
+                    QMessageBox.warning(
+                        self,
+                        "Apply Error",
+                        "No valid wallpaper image is currently selected or displayed.",
+                    )
+                    self.update_status_message(
+                        "Apply failed: No image selected", 5000
+                    )  # Show status too
                     return
 
         elif selected_source == "Custom URL":
@@ -670,14 +707,16 @@ class MainWindow(QMainWindow):
 
             self.apply_button.setEnabled(False)  # Disable button during download/set
             self.apply_button.setText("Downloading...")
-            self.statusBar().showMessage("Downloading from {url}...", 0) # 0 = Persistent until changed
+            self.statusBar().showMessage(
+                "Downloading from {url}...", 0
+            )  # 0 = Persistent until changed
             QApplication.processEvents()
 
             success = core_downloader.download_image(url, save_path)
 
             self.apply_button.setText("Apply Wallpaper")  # Restore button text
             self.apply_button.setEnabled(True)
-            self.update_status_message("") # Clear persistent message
+            self.update_status_message("")  # Clear persistent message
 
             if success:
                 logger.info(f"Custom URL image downloaded to: {save_path}")
@@ -705,7 +744,9 @@ class MainWindow(QMainWindow):
             logger.info(f"Calling core wallpaper setter for: {image_to_set}")
             self.apply_button.setEnabled(False)
             self.apply_button.setText("Setting...")
-            self.update_status_message("Setting wallpaper to {image_to_set.name}...", 0) # Persistent
+            self.update_status_message(
+                "Setting wallpaper to {image_to_set.name}...", 0
+            )  # Persistent
             QApplication.processEvents()
 
             set_success = core_wallpaper.set_gnome_wallpaper(image_to_set)
@@ -722,7 +763,9 @@ class MainWindow(QMainWindow):
                 #     f"Wallpaper successfully set to:\n{image_to_set.name}",
                 # )
                 # Show a success toast/brief message
-                self.update_status_message("Wallpaper applied successfully!", 5000) # Show for 5 sec
+                self.update_status_message(
+                    "Wallpaper applied successfully!", 5000
+                )  # Show for 5 sec
             else:
                 logger.error("Core wallpaper setting function returned False.")
                 QMessageBox.critical(
@@ -740,22 +783,26 @@ class MainWindow(QMainWindow):
                 "An internal error occurred: No valid image file was selected for setting.",
             )
 
-    @Slot(int) # Receives the Qt.CheckState enum value (0=Unchecked, 2=Checked)
+    @Slot(int)  # Receives the Qt.CheckState enum value (0=Unchecked, 2=Checked)
     def on_daily_update_toggled(self, state):
         """Handles enabling/disabling the daily update timer."""
-        enable = (state == Qt.CheckState.Checked.value) # Convert state enum to boolean
-        logger.info(f"Daily update checkbox toggled. Attempting to set state to: {'Enable' if enable else 'Disable'}")
+        enable = state == Qt.CheckState.Checked.value  # Convert state enum to boolean
+        logger.info(
+            f"Daily update checkbox toggled. Attempting to set state to: {'Enable' if enable else 'Disable'}"
+        )
 
         success = False
         action = "enable" if enable else "disable"
-        self.daily_update_checkbox.setEnabled(False) # Disable during operation
+        self.daily_update_checkbox.setEnabled(False)  # Disable during operation
         self.update_status_message(f"{action.capitalize()}ing daily updates...", 0)
-        QApplication.processEvents() # Update UI
+        QApplication.processEvents()  # Update UI
 
         try:
             if enable:
                 success = services_manager.enable_timer()
-                self.update_status_message(f"Daily updates {action}d.", 5000) # Use status bar
+                self.update_status_message(
+                    f"Daily updates {action}d.", 5000
+                )  # Use status bar
             else:
                 success = services_manager.disable_timer()
                 self.update_status_message(f"Failed to {action} daily updates.", 5000)
@@ -763,27 +810,37 @@ class MainWindow(QMainWindow):
             if success:
                 logger.info(f"Systemd timer {action}d successfully.")
                 # Update config file only if systemd command succeeded
-                core_config.set_setting('Settings', 'enabled', str(enable).lower())
+                core_config.set_setting("Settings", "enabled", str(enable).lower())
                 # Optional: Show status message
                 # self.statusBar().showMessage(f"Daily updates {action}d.", 3000)
             else:
                 logger.error(f"Failed to {action} systemd timer.")
-                QMessageBox.critical(self, "Timer Error", f"Failed to {action} the daily update timer.\nCheck logs for details.")
+                QMessageBox.critical(
+                    self,
+                    "Timer Error",
+                    f"Failed to {action} the daily update timer.\nCheck logs for details.",
+                )
                 # Revert checkbox state visually on failure
                 self.daily_update_checkbox.blockSignals(True)
-                self.daily_update_checkbox.setChecked(not enable) # Set back to original state
+                self.daily_update_checkbox.setChecked(
+                    not enable
+                )  # Set back to original state
                 self.daily_update_checkbox.blockSignals(False)
 
         except Exception as e:
             # Catch unexpected errors in manager functions
             logger.error(f"Unexpected error trying to {action} timer", exc_info=True)
-            QMessageBox.critical(self, "Internal Error", f"An unexpected error occurred while trying to {action} the timer.")
+            QMessageBox.critical(
+                self,
+                "Internal Error",
+                f"An unexpected error occurred while trying to {action} the timer.",
+            )
             # Revert checkbox state visually on failure
             self.daily_update_checkbox.blockSignals(True)
             self.daily_update_checkbox.setChecked(not enable)
             self.daily_update_checkbox.blockSignals(False)
         finally:
-            self.daily_update_checkbox.setEnabled(True) # Re-enable checkbox
+            self.daily_update_checkbox.setEnabled(True)  # Re-enable checkbox
 
     @Slot()
     def open_author_github(self):
@@ -809,7 +866,7 @@ class MainWindow(QMainWindow):
             "- The application will close.\n\n"
             "(Wallpaper images will NOT be deleted.)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No, # Default button
+            QMessageBox.StandardButton.No,  # Default button
         )
 
         if reply == QMessageBox.StandardButton.No:
@@ -831,8 +888,10 @@ class MainWindow(QMainWindow):
                 logger.warning("Failed to disable timer (might already be disabled).")
             logger.info("Removing service files...")
             if not services_manager.remove_service_files():
-                 errors.append("Could not remove the systemd service/timer files.\nManual removal might be needed.")
-                 logger.error("Failed to remove service files.")
+                errors.append(
+                    "Could not remove the systemd service/timer files.\nManual removal might be needed."
+                )
+                logger.error("Failed to remove service files.")
 
         except Exception as e:
             logger.error("Error during service/timer removal", exc_info=True)
@@ -842,7 +901,9 @@ class MainWindow(QMainWindow):
         try:
             logger.info("Deleting config file...")
             if not core_config.delete_config_file():
-                errors.append("Could not delete the configuration file.\nManual removal might be needed.")
+                errors.append(
+                    "Could not delete the configuration file.\nManual removal might be needed."
+                )
                 logger.error("Failed to delete config file.")
 
         except Exception as e:
@@ -851,74 +912,84 @@ class MainWindow(QMainWindow):
 
         # 3. Report results and close
         if errors:
-            error_message = "Uninstallation completed with errors:\n\n- " + "\n- ".join(errors)
+            error_message = "Uninstallation completed with errors:\n\n- " + "\n- ".join(
+                errors
+            )
             logger.error(f"Uninstallation errors: {errors}")
             QMessageBox.warning(self, "Uninstallation Issues", error_message)
         else:
             logger.info("Uninstallation successful.")
-            QMessageBox.information(self, "Uninstallation Complete", "ChromaDesk service and configuration removed successfully.")
+            QMessageBox.information(
+                self,
+                "Uninstallation Complete",
+                "ChromaDesk service and configuration removed successfully.",
+            )
 
         logger.info("Closing application after uninstall.")
-        self.close() # Close the application window
+        self.close()  # Close the application window
 
     # --- New Method --- #
     def _update_status_info(self):
-         """Fetches current status and config, updates status labels."""
-         logger.debug("Updating status info labels...")
+        """Fetches current status and config, updates status labels."""
+        logger.debug("Updating status info labels...")
 
-         # Version
-         try:
-             self.version_label.setText(f"Version: {chromadesk.__version__}")
-         except Exception as e:
-             logger.error("Failed to get version", exc_info=True)
-             self.version_label.setText("Version: Error")
+        # Version
+        try:
+            self.version_label.setText(f"Version: {chromadesk.__version__}")
+        except Exception as e:
+            logger.error("Failed to get version", exc_info=True)
+            self.version_label.setText("Version: Error")
 
-         # Config Region
-         try:
-             region_code = core_config.get_setting("Settings", "region", fallback="N/A")
-             region_name = region_code
-             for name, code in BING_REGIONS.items():
-                 if code == region_code:
-                     region_name = name
-                     break
-             self.config_region_label.setText(f"Region: {region_name} ({region_code})")
-         except Exception as e:
-             logger.error("Failed to get region config", exc_info=True)
-             self.config_region_label.setText("Region: Error")
+        # Config Region
+        try:
+            region_code = core_config.get_setting("Settings", "region", fallback="N/A")
+            region_name = region_code
+            for name, code in BING_REGIONS.items():
+                if code == region_code:
+                    region_name = name
+                    break
+            self.config_region_label.setText(f"Region: {region_name} ({region_code})")
+        except Exception as e:
+            logger.error("Failed to get region config", exc_info=True)
+            self.config_region_label.setText("Region: Error")
 
-         # Config History Limit
-         try:
-             history_limit = core_config.get_setting("Settings", "keep_history", fallback="N/A")
-             self.config_history_label.setText(f"History Limit: {history_limit}")
-         except Exception as e:
-             logger.error("Failed to get history limit config", exc_info=True)
-             self.config_history_label.setText("History Limit: Error")
+        # Config History Limit
+        try:
+            history_limit = core_config.get_setting(
+                "Settings", "keep_history", fallback="N/A"
+            )
+            self.config_history_label.setText(f"History Limit: {history_limit}")
+        except Exception as e:
+            logger.error("Failed to get history limit config", exc_info=True)
+            self.config_history_label.setText("History Limit: Error")
 
-         # Config Directory
-         try:
-             wallpaper_dir = core_history.get_wallpaper_dir()
-             dir_text = str(wallpaper_dir) if wallpaper_dir else 'Not Set'
-             self.config_dir_label.setText(f"Directory: {dir_text}")
-             self.config_dir_label.setToolTip(dir_text) # Add tooltip for full path
-         except Exception as e:
-             logger.error("Failed to get wallpaper directory", exc_info=True)
-             self.config_dir_label.setText("Directory: Error")
+        # Config Directory
+        try:
+            wallpaper_dir = core_history.get_wallpaper_dir()
+            dir_text = str(wallpaper_dir) if wallpaper_dir else "Not Set"
+            self.config_dir_label.setText(f"Directory: {dir_text}")
+            self.config_dir_label.setToolTip(dir_text)  # Add tooltip for full path
+        except Exception as e:
+            logger.error("Failed to get wallpaper directory", exc_info=True)
+            self.config_dir_label.setText("Directory: Error")
 
-         # Timer Status
-         try:
-             timer_enabled = services_manager.is_timer_enabled()
-             self.timer_status_label.setText(f"Daily Timer: {'Active' if timer_enabled else 'Inactive'}")
-         except Exception as e:
-             logger.error("Failed to get timer status", exc_info=True)
-             self.timer_status_label.setText("Daily Timer: Error")
+        # Timer Status
+        try:
+            timer_enabled = services_manager.is_timer_enabled()
+            self.timer_status_label.setText(
+                f"Daily Timer: {'Active' if timer_enabled else 'Inactive'}"
+            )
+        except Exception as e:
+            logger.error("Failed to get timer status", exc_info=True)
+            self.timer_status_label.setText("Daily Timer: Error")
 
-         # Last Change (Placeholder)
-         # try:
-         #     # Future logic to get last change status
-         #     self.last_change_label.setText("Last Change: N/A")
-         # except Exception as e:
-         #     logger.error("Failed to get last change status", exc_info=True)
-         #     self.last_change_label.setText("Last Change: Error")
+        # Last Change (Placeholder)
+        # try:
+        #     # Future logic to get last change status
+        #     self.last_change_label.setText("Last Change: N/A")
+        # except Exception as e:
+        #     logger.error("Failed to get last change status", exc_info=True)
+        #     self.last_change_label.setText("Last Change: Error")
 
 
 # --- Need urlparse for custom URL extension guessing ---
