@@ -1,6 +1,6 @@
 # .github/workflows/release.yml
 
-name: Build and Release AppImage
+name: Build and Release AppImage (Multi-OS LTS)
 
 on:
   push:
@@ -13,13 +13,18 @@ permissions:
   contents: write # Required to create releases and upload assets
 
 jobs:
-  build-release:
-    name: Build and Release ChromaDesk AppImage (on Ubuntu 22.04)
+  # Job to build the AppImage on different Ubuntu LTS versions
+  build:
+    strategy:
+      matrix:
+        # Define the Ubuntu LTS versions to build on
+        # ubuntu-20.04 for legacy, ubuntu-24.04 for modern
+        os: [ubuntu-20.04, ubuntu-24.04] # <-- Updated 22.04 to 24.04
+      fail-fast: false # Allow other builds to continue if one fails
+    name: Build on ${{ matrix.os }} # Dynamic job name
 
-    # --- THIS IS THE MODIFIED LINE ---
-    # Specifies that this job should run on an Ubuntu 22.04 runner provided by GitHub Actions.
-    runs-on: ubuntu-22.04
-    # --- END OF MODIFIED LINE ---
+    # Run this job on the OS specified by the matrix variable
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -28,12 +33,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Or your project's specific version
+          python-version: '3.11' # Consistent Python version
 
       - name: Install System Build Dependencies
         run: |
           sudo apt-get update
-          # libfuse2 is often needed for AppImage creation/compatibility tools
+          # Install dependencies common to supported LTS versions
           sudo apt-get install -y --no-install-recommends \
             patchelf \
             desktop-file-utils \
@@ -41,7 +46,7 @@ jobs:
             fakeroot \
             libdbus-1-dev \
             pkg-config
-            # appimagetool will be downloaded manually
+          echo "System dependencies installed on ${{ matrix.os }}"
 
       - name: Download and Install appimagetool
         run: |
@@ -55,108 +60,116 @@ jobs:
       - name: Get Project Version
         id: get_project_version
         run: |
-          # Robust version reading from pyproject.toml (supports project/poetry tables and Python 3.11+ tomllib or older tomli)
+          # Robust version reading from pyproject.toml
+          # (Keeping the same robust logic)
           VERSION_CMD=""
           if python -c "import sys; sys.exit(0) if sys.version_info >= (3, 11) else sys.exit(1)"; then
-              # Python 3.11+ has built-in tomllib
               if python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
-                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
-                  echo "Reading version from [project][version] using tomllib"
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"; echo "Reading version using tomllib [project]"
               elif python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
-                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
-                  echo "Reading version from [tool][poetry][version] using tomllib"
-              else
-                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (Python 3.11+)"
-                  cat pyproject.toml # Print file content for debugging
-                  exit 1
-              fi
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"; echo "Reading version using tomllib [poetry]"
+              else echo "ERROR: Could not find version key (Python 3.11+)"; cat pyproject.toml; exit 1; fi
           else
-              # Older Python, try tomli (install if necessary)
               pip install tomli
               if python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
-                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])"
-                  echo "Reading version from [project][version] using tomli"
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])"; echo "Reading version using tomli [project]"
               elif python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
-                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
-                  echo "Reading version from [tool][poetry][version] using tomli"
-              else
-                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (tomli)"
-                  cat pyproject.toml # Print file content for debugging
-                  exit 1
-              fi
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"; echo "Reading version using tomli [poetry]"
+              else echo "ERROR: Could not find version key (tomli)"; cat pyproject.toml; exit 1; fi
           fi
-
           PROJECT_VERSION=$(python -c "${VERSION_CMD}")
-          if [ -z "$PROJECT_VERSION" ]; then
-             echo "ERROR: Failed to extract project version."
-             exit 1
-          fi
+          if [ -z "$PROJECT_VERSION" ]; then echo "ERROR: Failed to extract project version."; exit 1; fi
           echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
           echo "Project version found: ${PROJECT_VERSION}"
-
 
       - name: Install Python Build Dependencies & Project
         run: |
           python -m pip install --upgrade pip
-          # Install build tools
           pip install build setuptools wheel
-          # Explicitly install/upgrade PySide6 first (pinning to ensure latest known stable)
-          echo "Installing/Upgrading PySide6..."
-          pip install --upgrade "PySide6==6.8.3" # Pin to the confirmed latest stable version
-          echo "Verifying PySide6 installation..."
-          pip show PySide6 # Display installed version for confirmation
-          echo "Installing project and its dependencies..."
-          # Install project and its core dependencies (will use the pinned PySide6)
+          echo "Installing/Upgrading PySide6 (pinned)..."
+          pip install --upgrade "PySide6==6.8.3" # Use consistent latest stable PySide
+          pip show PySide6 # Verify
+          echo "Installing project dependencies..."
           pip install .
-          # Install optional dependencies if needed by build.sh or runtime
           echo "Installing optional dependencies [notifications]..."
           pip install ".[notifications]"
 
-
       - name: Build AppImage using build.sh
         run: |
-          # Ensure build.sh is executable
           chmod +x ./build.sh
-          # Run the build script, telling it to create the AppImage
-          # Use --debug flag on build.sh if more verbose output is needed from the script itself
+          echo "Running build script on ${{ matrix.os }}..."
           ./build.sh --appimage
 
-      - name: Determine AppImage Filename
-        id: get_appimage_filename
+      - name: Determine and Prepare AppImage Filename for Upload
+        id: prepare_appimage
         run: |
-          # Use the version obtained from pyproject.toml earlier
           VERSION="${{ steps.get_project_version.outputs.project_version }}"
-          # Ensure VERSION is not empty
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Project version is empty. Cannot determine filename."
-            exit 1
-          fi
-          FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
-          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
-          echo "Checking for expected file: ${FILENAME}"
-          # Verify the file was actually created by build.sh in the root directory
-          if [[ ! -f "${FILENAME}" ]]; then
-            echo "ERROR: Expected AppImage file ${FILENAME} not found in root after build!"
-            echo "Listing current directory contents:"
-            ls -lAh .
-            echo "Listing .AppImage files found:"
-            ls -l *.AppImage # List found AppImages for debugging
-            exit 1
-          fi
-          echo "AppImage file ${FILENAME} found."
+          if [ -z "$VERSION" ]; then echo "ERROR: Project version is empty."; exit 1; fi
 
-      - name: Create GitHub Release and Upload Asset
+          # Create an OS tag (e.g., ubuntu2004, ubuntu2404)
+          OS_TAG=$(echo "${{ matrix.os }}" | sed -e 's/ubuntu-//' -e 's/\.//g') # This automatically handles 24.04
+
+          ORIGINAL_FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
+          NEW_FILENAME="chromadesk-${VERSION}-x86_64-${OS_TAG}.AppImage"
+
+          echo "Checking for original file: ${ORIGINAL_FILENAME}"
+          if [[ ! -f "${ORIGINAL_FILENAME}" ]]; then
+            echo "ERROR: Expected AppImage file ${ORIGINAL_FILENAME} not found after build!"
+            ls -lAh . ; ls -l *.AppImage
+            exit 1
+          fi
+
+          echo "Renaming ${ORIGINAL_FILENAME} to ${NEW_FILENAME}"
+          mv "${ORIGINAL_FILENAME}" "${NEW_FILENAME}"
+
+          echo "filename=${NEW_FILENAME}" >> $GITHUB_OUTPUT
+          echo "AppImage prepared for upload: ${NEW_FILENAME}"
+
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromadesk-appimage-${{ matrix.os }} # Unique artifact name per OS build
+          path: ${{ steps.prepare_appimage.outputs.filename }} # Upload the renamed file
+          retention-days: 1 # Keep artifacts for 1 day
+
+  # Job to create the GitHub Release after all builds are complete
+  release:
+    name: Create GitHub Release
+    needs: build # Depends on the successful completion of ALL matrix builds
+    runs-on: ubuntu-latest # Needs a basic runner to download artifacts and call API
+
+    steps:
+      - name: Download all AppImage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # Download all artifacts from the workflow run into 'appimages' directory
+          path: appimages
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts structure:"
+          ls -lR appimages/
+          # Expected structure: appimages/<artifact-name>/<filename>
+          # e.g., appimages/chromadesk-appimage-ubuntu-20.04/chromadesk-X.Y.Z-x86_64-ubuntu2004.AppImage
+          # e.g., appimages/chromadesk-appimage-ubuntu-24.04/chromadesk-X.Y.Z-x86_64-ubuntu2404.AppImage
+
+      - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Use the dynamically determined filename
-          files: ${{ steps.get_appimage_filename.outputs.filename }}
+          # Use glob to upload all AppImage files found within the download directory structure
+          files: appimages/*/*.AppImage
           tag_name: ${{ github.ref_name }} # Use the tag that triggered workflow
-          # Add a note about the build environment to the release title
-          name: Release ${{ github.ref_name }} (Built on Ubuntu 22.04)
-          body: | # Use multi-line body for clarity
+          name: Release ${{ github.ref_name }} (Multi-Build LTS)
+          # Updated body to reflect 20.04 vs 24.04 builds
+          body: |
             Automated AppImage release for ChromaDesk ${{ github.ref_name }}.
 
-            **Important Note:** This build was created on **Ubuntu 22.04**. It requires a newer GLIBC version (likely 2.35 or higher) and may **not** run on older Linux distributions like Ubuntu 20.04 or Debian 11.
+            This release includes builds for different compatibility targets based on Ubuntu LTS versions:
+
+            *   **`...-ubuntu2004.AppImage`**: Built on Ubuntu 20.04 (GLIBC 2.31). Recommended for **older systems** (e.g., Ubuntu 20.04, Debian 11, RHEL 8 derivatives).
+            *   **`...-ubuntu2404.AppImage`**: Built on Ubuntu 24.04 (GLIBC 2.39). Recommended for **very recent systems** (e.g., Ubuntu 24.04+, Fedora 40+, Debian 13+/testing). Should provide the best experience on modern desktops.
+
+            Please download the version appropriate for your Linux distribution.
           draft: false
           prerelease: false # Set to true if these are pre-releases
         env:
