@@ -1,0 +1,60 @@
+name: PR Code Quality Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Run linters and type checks
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install black flake8 isort mypy
+
+      - name: Run Black
+        id: black
+        run: |
+          black --check . || echo "::set-output name=black_failed::true"
+
+      - name: Run Flake8
+        id: flake8
+        run: |
+          flake8 . || echo "::set-output name=flake8_failed::true"
+
+      - name: Run isort
+        id: isort
+        run: |
+          isort --check-only . || echo "::set-output name=isort_failed::true"
+
+      - name: Run mypy
+        id: mypy
+        run: |
+          mypy . || echo "::set-output name=mypy_failed::true"
+
+      - name: Post Comment on PR if any check fails
+        if: steps.black.outputs.black_failed == 'true' || steps.flake8.outputs.flake8_failed == 'true' || steps.isort.outputs.isort_failed == 'true' || steps.mypy.outputs.mypy_failed == 'true'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            :warning: **Code quality checks failed!**
+            - Black: ${{ steps.black.outputs.black_failed == 'true' && 'Failed' || 'Passed' }}
+            - Flake8: ${{ steps.flake8.outputs.flake8_failed == 'true' && 'Failed' || 'Passed' }}
+            - Isort: ${{ steps.isort.outputs.isort_failed == 'true' && 'Failed' || 'Passed' }}
+            - Mypy: ${{ steps.mypy.outputs.mypy_failed == 'true' && 'Failed' || 'Passed' }}
+            Please fix these issues before merging.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
