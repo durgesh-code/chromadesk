@@ -102,8 +102,8 @@ def _send_notification_dbus(title: str, message: str, icon_name: str = "dialog-i
         return False
     # Catch any other unexpected errors
     except Exception as e:
-        logger.error(f"Error sending notification via dbus-python: {e}", exc_info=True)
-        return False
+         logger.error(f"An unexpected error occurred checking gsettings keys: {e}")
+         return False
 
 def send_notification(title: str, message: str):
     """
@@ -192,11 +192,21 @@ def set_gnome_wallpaper(image_path: Path) -> bool:
     This function adapts its behavior based on the desktop session type
     (X11 vs. Wayland/other) and the availability of the 'picture-uri-dark'
     gsettings key to maximize compatibility across different GNOME versions.
+    Sets the GNOME desktop wallpaper using the gsettings command-line tool.
+
+    This function adapts its behavior based on the desktop session type
+    (X11 vs. Wayland/other) and the availability of the 'picture-uri-dark'
+    gsettings key to maximize compatibility across different GNOME versions.
 
     Args:
         image_path: The absolute Path object pointing to the desired wallpaper image.
+        image_path: The absolute Path object pointing to the desired wallpaper image.
 
     Returns:
+        True if the necessary gsettings commands were executed successfully,
+        False otherwise. Note: Success indicates the commands ran without error,
+        but doesn't guarantee the desktop visually updated if there are other
+        desktop environment issues.
         True if the necessary gsettings commands were executed successfully,
         False otherwise. Note: Success indicates the commands ran without error,
         but doesn't guarantee the desktop visually updated if there are other
@@ -207,12 +217,15 @@ def set_gnome_wallpaper(image_path: Path) -> bool:
         return False
 
     # Check if gsettings command exists early on
+    # Check if gsettings command exists early on
     if not shutil.which("gsettings"):
          logger.error("'gsettings' command not found. Cannot set GNOME wallpaper.")
          return False
 
     # Convert the Path object to an absolute file URI (e.g., "file:///...")
+    # Convert the Path object to an absolute file URI (e.g., "file:///...")
     try:
+        abs_image_path = image_path.resolve(strict=True) # Ensures path exists
         abs_image_path = image_path.resolve(strict=True) # Ensures path exists
         file_uri = abs_image_path.as_uri()
     except FileNotFoundError:
@@ -240,13 +253,41 @@ def set_gnome_wallpaper(image_path: Path) -> bool:
             logger.info(f"Key '{KEY_PICTURE_URI_DARK}' not found. Will only set 'picture-uri'.")
 
     # --- Build the list of commands to execute ---
+    # --- Determine which keys need to be set based on environment ---
+    session_type = os.environ.get('XDG_SESSION_TYPE', 'unknown').lower()
+    is_x11 = (session_type == 'x11')
+    should_set_dark_uri = False # Default to not setting the dark URI
+
+    if is_x11:
+        # On X11, GNOME traditionally uses only picture-uri for both light/dark
+        logger.info("X11 session detected. Will only set 'picture-uri'.")
+    else:
+        # On Wayland (or unknown sessions), check if the modern 'picture-uri-dark' exists
+        logger.info(f"Session type '{session_type}' detected (or unknown). Checking for '{KEY_PICTURE_URI_DARK}'.")
+        if _check_gsettings_key_exists(SCHEMA_BACKGROUND, KEY_PICTURE_URI_DARK):
+            logger.info(f"Key '{KEY_PICTURE_URI_DARK}' found. Will set both light and dark URIs.")
+            should_set_dark_uri = True
+        else:
+            logger.info(f"Key '{KEY_PICTURE_URI_DARK}' not found. Will only set 'picture-uri'.")
+
+    # --- Build the list of commands to execute ---
     commands_to_run = [
+        # 1. Set picture options (e.g., how the image is scaled)
+        ['gsettings', 'set', SCHEMA_BACKGROUND, KEY_PICTURE_OPTIONS, 'zoom'], # 'zoom' is usually a good default
+        # 2. Always set the primary picture URI
         # 1. Set picture options (e.g., how the image is scaled)
         ['gsettings', 'set', SCHEMA_BACKGROUND, KEY_PICTURE_OPTIONS, 'zoom'], # 'zoom' is usually a good default
         # 2. Always set the primary picture URI
         ['gsettings', 'set', SCHEMA_BACKGROUND, KEY_PICTURE_URI, file_uri],
     ]
 
+    # 3. Conditionally add the command for the dark URI if needed
+    if should_set_dark_uri:
+        commands_to_run.append(['gsettings', 'set', SCHEMA_BACKGROUND, KEY_PICTURE_URI_DARK, file_uri])
+
+    logger.info(f"Attempting to set wallpaper using {len(commands_to_run)} gsettings command(s). Target URI: {file_uri}")
+
+    # --- Execute the gsettings commands ---
     # 3. Conditionally add the command for the dark URI if needed
     if should_set_dark_uri:
         commands_to_run.append(['gsettings', 'set', SCHEMA_BACKGROUND, KEY_PICTURE_URI_DARK, file_uri])
@@ -261,29 +302,43 @@ def set_gnome_wallpaper(image_path: Path) -> bool:
             # Run the command, check for non-zero exit code, capture output
             result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
             logger.debug(f"Command successful.") # Keep success log concise
+            logger.debug(f"Running command: {' '.join(cmd)}")
+            # Run the command, check for non-zero exit code, capture output
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+            logger.debug(f"Command successful.") # Keep success log concise
         except FileNotFoundError:
             logger.error(f"Command failed: '{cmd[0]}' not found. Check PATH.")
+            logger.error(f"Command failed: '{cmd[0]}' not found. Check PATH.")
             success = False
+            break # Cannot continue if gsettings is missing
             break # Cannot continue if gsettings is missing
         except subprocess.TimeoutExpired:
             logger.error(f"Command timed out: {' '.join(cmd)}")
             success = False
             break # Stop if a command hangs
+            break # Stop if a command hangs
         except subprocess.CalledProcessError as e:
+            # This catches gsettings commands that exit with an error
             # This catches gsettings commands that exit with an error
             logger.error(f"Command failed: {' '.join(cmd)}")
             logger.error(f"  Return Code: {e.returncode}")
             logger.error(f"  Stderr: {e.stderr.strip()}")
             # If setting the main URI fails, no point setting dark. If options fail, maybe continue?
             # For simplicity, we break on the first error.
+            # If setting the main URI fails, no point setting dark. If options fail, maybe continue?
+            # For simplicity, we break on the first error.
             success = False
             break
+            break
         except Exception as e:
+             # Catch any other unexpected exceptions during subprocess execution
+             logger.error(f"An unexpected error occurred running command {' '.join(cmd)}: {e}", exc_info=True)
              # Catch any other unexpected exceptions during subprocess execution
              logger.error(f"An unexpected error occurred running command {' '.join(cmd)}: {e}", exc_info=True)
              success = False
              break
 
+    # Final status log
     # Final status log
     if success:
         logger.info("Successfully executed necessary gsettings commands for wallpaper.")
