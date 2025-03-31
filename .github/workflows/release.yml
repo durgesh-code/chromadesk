@@ -1,48 +1,62 @@
 # .github/workflows/release.yml
 
-name: Build and Release AppImage
+name: Build and Release AppImage (Multi-OS LTS)
 
+# --- Tells GitHub Actions WHEN to run this workflow ---
 on:
   push:
     tags:
       - 'v*' # Trigger on tags like v0.1.0, v1.0.0 etc.
-  # Allow manual triggering for testing
+  # Allow manual triggering from the Actions tab in GitHub
   workflow_dispatch:
+# --- End of trigger definition ---
 
+# Permissions needed for the workflow to interact with the repo
 permissions:
-  contents: write # Required to create releases and upload assets
+  contents: write # Required by softprops/action-gh-release to create releases and upload assets
 
 jobs:
-  build-release:
-    name: Build and Release ChromaDesk AppImage (on Ubuntu 22.04)
-
-    # --- THIS IS THE MODIFIED LINE ---
-    # Specifies that this job should run on an Ubuntu 22.04 runner provided by GitHub Actions.
-    runs-on: ubuntu-22.04
-    # --- END OF MODIFIED LINE ---
+  # == JOB 1: Build the AppImage on multiple Ubuntu LTS versions ==
+  build:
+    strategy:
+      # Define the OS versions to run the build job on
+      matrix:
+        os: [ubuntu-20.04, ubuntu-24.04] # Legacy (20.04) and Modern (24.04) LTS
+      # Don't cancel all builds if one OS in the matrix fails
+      fail-fast: false
+    # Dynamic job name based on the OS from the matrix
+    name: Build on ${{ matrix.os }}
+    # Set the runner environment based on the OS from the matrix
+    runs-on: ${{ matrix.os }}
 
     steps:
+      # Step 1.1: Get the source code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Step 1.2: Set up the Python environment
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Or your project's specific version
+          python-version: '3.11' # Specify desired Python version
 
+      # Step 1.3: Install OS-level packages needed for the build
       - name: Install System Build Dependencies
         run: |
           sudo apt-get update
-          # libfuse2 is often needed for AppImage creation/compatibility tools
+          # Install necessary tools and libraries.
+          # libglib2.0-dev is crucial for building dbus-python, a dependency for notifications.
           sudo apt-get install -y --no-install-recommends \
             patchelf \
             desktop-file-utils \
             libfuse2 \
             fakeroot \
             libdbus-1-dev \
-            pkg-config
-            # appimagetool will be downloaded manually
+            pkg-config \
+            libglib2.0-dev   # <-- Ensures dbus-python builds correctly
+          echo "System dependencies installed on ${{ matrix.os }}"
 
+      # Step 1.4: Get the appimagetool utility
       - name: Download and Install appimagetool
         run: |
           APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
@@ -52,112 +66,155 @@ jobs:
           sudo mv appimagetool.AppImage /usr/local/bin/appimagetool
           echo "appimagetool installed to /usr/local/bin/appimagetool"
 
+      # Step 1.5: Extract the project version from pyproject.toml
       - name: Get Project Version
         id: get_project_version
         run: |
           # Robust version reading from pyproject.toml (supports project/poetry tables and Python 3.11+ tomllib or older tomli)
           VERSION_CMD=""
           if python -c "import sys; sys.exit(0) if sys.version_info >= (3, 11) else sys.exit(1)"; then
-              # Python 3.11+ has built-in tomllib
               if python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
-                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
-                  echo "Reading version from [project][version] using tomllib"
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"; echo "Reading version using tomllib [project]"
               elif python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
-                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
-                  echo "Reading version from [tool][poetry][version] using tomllib"
-              else
-                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (Python 3.11+)"
-                  cat pyproject.toml # Print file content for debugging
-                  exit 1
-              fi
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"; echo "Reading version using tomllib [poetry]"
+              else echo "ERROR: Could not find version key in pyproject.toml (Python 3.11+)"; cat pyproject.toml; exit 1; fi
           else
-              # Older Python, try tomli (install if necessary)
+              # Older Python, try installing and using tomli
               pip install tomli
               if python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
-                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])"
-                  echo "Reading version from [project][version] using tomli"
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])"; echo "Reading version using tomli [project]"
               elif python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
-                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
-                  echo "Reading version from [tool][poetry][version] using tomli"
-              else
-                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (tomli)"
-                  cat pyproject.toml # Print file content for debugging
-                  exit 1
-              fi
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"; echo "Reading version using tomli [poetry]"
+              else echo "ERROR: Could not find version key in pyproject.toml (tomli)"; cat pyproject.toml; exit 1; fi
           fi
-
           PROJECT_VERSION=$(python -c "${VERSION_CMD}")
-          if [ -z "$PROJECT_VERSION" ]; then
-             echo "ERROR: Failed to extract project version."
-             exit 1
-          fi
+          if [ -z "$PROJECT_VERSION" ]; then echo "ERROR: Failed to extract project version."; exit 1; fi
+          # Make the version available to other steps/jobs
           echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
           echo "Project version found: ${PROJECT_VERSION}"
 
-
+      # Step 1.6: Install Python dependencies (including optional ones)
       - name: Install Python Build Dependencies & Project
         run: |
           python -m pip install --upgrade pip
-          # Install build tools
+          # Install tools needed to build the package itself
           pip install build setuptools wheel
-          # Explicitly install/upgrade PySide6 first (pinning to ensure latest known stable)
-          echo "Installing/Upgrading PySide6..."
-          pip install --upgrade "PySide6==6.8.3" # Pin to the confirmed latest stable version
-          echo "Verifying PySide6 installation..."
-          pip show PySide6 # Display installed version for confirmation
-          echo "Installing project and its dependencies..."
-          # Install project and its core dependencies (will use the pinned PySide6)
+          # Ensure the specific version of PySide6 is installed first
+          echo "Installing/Upgrading PySide6 (pinned)..."
+          pip install --upgrade "PySide6==6.8.3" # Use consistent latest stable PySide
+          pip show PySide6 # Log installed version for verification
+          # Install the project itself along with its core dependencies from pyproject.toml
+          echo "Installing project dependencies..."
           pip install .
-          # Install optional dependencies if needed by build.sh or runtime
+          # Install optional dependencies defined in pyproject.toml [project.optional-dependencies]
           echo "Installing optional dependencies [notifications]..."
-          pip install ".[notifications]"
+          pip install ".[notifications]" # This needs libglib2.0-dev from previous step
 
-
+      # Step 1.7: Run the main build script to create the AppDir and initial AppImage
       - name: Build AppImage using build.sh
         run: |
-          # Ensure build.sh is executable
           chmod +x ./build.sh
-          # Run the build script, telling it to create the AppImage
-          # Use --debug flag on build.sh if more verbose output is needed from the script itself
+          echo "Running build script on ${{ matrix.os }}..."
+          # Tell build.sh to create the AppImage
           ./build.sh --appimage
 
-      - name: Determine AppImage Filename
-        id: get_appimage_filename
+      # Step 1.8: Rename the AppImage to include OS tag for clarity in releases
+      - name: Determine and Prepare AppImage Filename for Upload
+        id: prepare_appimage
         run: |
-          # Use the version obtained from pyproject.toml earlier
+          # Get version from the previous step's output
           VERSION="${{ steps.get_project_version.outputs.project_version }}"
-          # Ensure VERSION is not empty
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: Project version is empty. Cannot determine filename."
-            exit 1
-          fi
-          FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
-          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
-          echo "Checking for expected file: ${FILENAME}"
-          # Verify the file was actually created by build.sh in the root directory
-          if [[ ! -f "${FILENAME}" ]]; then
-            echo "ERROR: Expected AppImage file ${FILENAME} not found in root after build!"
-            echo "Listing current directory contents:"
-            ls -lAh .
-            echo "Listing .AppImage files found:"
-            ls -l *.AppImage # List found AppImages for debugging
-            exit 1
-          fi
-          echo "AppImage file ${FILENAME} found."
+          if [ -z "$VERSION" ]; then echo "ERROR: Project version is empty. Cannot determine filename."; exit 1; fi
 
-      - name: Create GitHub Release and Upload Asset
+          # Create an OS tag like 'ubuntu2004' or 'ubuntu2404' from the matrix variable
+          OS_TAG=$(echo "${{ matrix.os }}" | sed -e 's/ubuntu-//' -e 's/\.//g')
+
+          # Define original and new filenames
+          ORIGINAL_FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
+          NEW_FILENAME="chromadesk-${VERSION}-x86_64-${OS_TAG}.AppImage"
+
+          # Check if the build script actually produced the expected file
+          echo "Checking for original file: ${ORIGINAL_FILENAME}"
+          if [[ ! -f "${ORIGINAL_FILENAME}" ]]; then
+            echo "ERROR: Expected AppImage file ${ORIGINAL_FILENAME} not found after build!"
+            echo "Listing directory contents:"
+            ls -lAh . ; echo "Listing *.AppImage files:" ; ls -l *.AppImage
+            exit 1
+          fi
+
+          # Rename the file
+          echo "Renaming ${ORIGINAL_FILENAME} to ${NEW_FILENAME}"
+          mv "${ORIGINAL_FILENAME}" "${NEW_FILENAME}"
+
+          # Set the new filename as output for the upload step
+          echo "filename=${NEW_FILENAME}" >> $GITHUB_OUTPUT
+          echo "AppImage prepared for upload: ${NEW_FILENAME}"
+
+      # Step 1.9: Upload the renamed AppImage as a workflow artifact
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Unique name for the artifact based on the OS build
+          name: chromadesk-appimage-${{ matrix.os }}
+          # Path to the file to upload (using output from previous step)
+          path: ${{ steps.prepare_appimage.outputs.filename }}
+          # How long to keep the artifact (short retention is fine as it's used by the release job)
+          retention-days: 1
+
+  # == JOB 2: Create the GitHub Release ==
+  release:
+    # User-friendly name for the job
+    name: Create GitHub Release
+    # This job depends on the successful completion of ALL matrix builds in the 'build' job
+    needs: build
+    # Use a standard, lightweight runner for this job
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 2.1: Download all artifacts produced by the 'build' job matrix runs
+      - name: Download all AppImage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # If 'name' is not specified, it downloads all artifacts from the workflow run.
+          # They will be placed in the specified 'path' directory,
+          # usually preserving the artifact name as a subdirectory structure.
+          path: appimages
+
+      # Step 2.2: Verify downloaded files (optional but helpful for debugging)
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts structure:"
+          ls -lR appimages/
+          # Example expected structure:
+          # appimages/
+          # ├── chromadesk-appimage-ubuntu-20.04/
+          # │   └── chromadesk-X.Y.Z-x86_64-ubuntu2004.AppImage
+          # └── chromadesk-appimage-ubuntu-24.04/
+          #     └── chromadesk-X.Y.Z-x86_64-ubuntu2404.AppImage
+
+      # Step 2.3: Create the release and upload the downloaded AppImages
+      - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Use the dynamically determined filename
-          files: ${{ steps.get_appimage_filename.outputs.filename }}
-          tag_name: ${{ github.ref_name }} # Use the tag that triggered workflow
-          # Add a note about the build environment to the release title
-          name: Release ${{ github.ref_name }} (Built on Ubuntu 22.04)
-          body: | # Use multi-line body for clarity
+          # Use a glob pattern to find all .AppImage files within the download directory structure
+          files: appimages/*/*.AppImage
+          # Use the tag that triggered this workflow run
+          tag_name: ${{ github.ref_name }}
+          # Title for the GitHub Release page
+          name: Release ${{ github.ref_name }} (Multi-Build LTS)
+          # Body/description for the release, explaining the different files
+          body: |
             Automated AppImage release for ChromaDesk ${{ github.ref_name }}.
 
-            **Important Note:** This build was created on **Ubuntu 22.04**. It requires a newer GLIBC version (likely 2.35 or higher) and may **not** run on older Linux distributions like Ubuntu 20.04 or Debian 11.
+            This release includes builds for different compatibility targets based on Ubuntu LTS versions:
+
+            *   **`...-ubuntu2004.AppImage`**: Built on Ubuntu 20.04 (GLIBC 2.31). Recommended for **older systems** (e.g., Ubuntu 20.04, Debian 11, RHEL 8 derivatives).
+            *   **`...-ubuntu2404.AppImage`**: Built on Ubuntu 24.04 (GLIBC 2.39). Recommended for **very recent systems** (e.g., Ubuntu 24.04+, Fedora 40+, Debian 13+/testing). Should provide the best experience on modern desktops.
+
+            Please download the version appropriate for your Linux distribution.
+          # Set draft/prerelease status as needed
           draft: false
-          prerelease: false # Set to true if these are pre-releases
+          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions
+          # The action needs the GitHub token to interact with the API
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
