@@ -31,7 +31,7 @@ jobs:
       - name: Run Black
         id: black
         run: |
-          black --check . 2>&1 | tee black_output.txt
+          black --check --diff --quiet . | grep "would reformat" | awk '{print $3}' > black_output.txt || true
         continue-on-error: true
 
       - name: Run Flake8
