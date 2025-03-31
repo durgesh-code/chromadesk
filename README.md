@@ -24,6 +24,9 @@ A modern wallpaper management application for 🐧 Linux/GNOME desktop environme
 | ![Bing Today](data/screenshots/app-1.png)            | ![History](data/screenshots/app-2.png)              | ![Custom Sources](data/screenshots/app-3.png)         |
 
 ## Installation 💻
+### Prerequisites
+- [**FUSE**](https://github.com/appimage/appimagekit/wiki/fuse)
+
 
 ### Recommended Method: AppImage 🚀
 
