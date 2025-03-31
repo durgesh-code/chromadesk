@@ -1,29 +1,14 @@
 # .github/workflows/release.yml
 
-name: Build and Release AppImage (Multi-OS LTS)
-
-on:
-  push:
-    tags:
-      - 'v*' # Trigger on tags like v0.1.0, v1.0.0 etc.
-  # Allow manual triggering for testing
-  workflow_dispatch:
-
-permissions:
-  contents: write # Required to create releases and upload assets
+# ... (name, on, permissions sections remain the same) ...
 
 jobs:
-  # Job to build the AppImage on different Ubuntu LTS versions
   build:
     strategy:
       matrix:
-        # Define the Ubuntu LTS versions to build on
-        # ubuntu-20.04 for legacy, ubuntu-24.04 for modern
-        os: [ubuntu-20.04, ubuntu-24.04] # <-- Updated 22.04 to 24.04
-      fail-fast: false # Allow other builds to continue if one fails
-    name: Build on ${{ matrix.os }} # Dynamic job name
-
-    # Run this job on the OS specified by the matrix variable
+        os: [ubuntu-20.04, ubuntu-24.04]
+      fail-fast: false
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -33,22 +18,25 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Consistent Python version
+          python-version: '3.11'
 
-      - name: Install System Build Dependencies
+      - name: Install System Build Dependencies # <-- MODIFIED STEP
         run: |
           sudo apt-get update
-          # Install dependencies common to supported LTS versions
+          # Install base build deps AND development headers for GLib
+          # libglib2.0-dev is required for building dbus-python (needed by notify2)
           sudo apt-get install -y --no-install-recommends \
             patchelf \
             desktop-file-utils \
             libfuse2 \
             fakeroot \
             libdbus-1-dev \
-            pkg-config
+            pkg-config \
+            libglib2.0-dev   # <-- ADDED THIS LINE
           echo "System dependencies installed on ${{ matrix.os }}"
 
       - name: Download and Install appimagetool
+        # ... (this step remains the same) ...
         run: |
           APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           echo "Downloading appimagetool from ${APPIMAGETOOL_URL}..."
@@ -58,10 +46,10 @@ jobs:
           echo "appimagetool installed to /usr/local/bin/appimagetool"
 
       - name: Get Project Version
+        # ... (this step remains the same) ...
         id: get_project_version
         run: |
           # Robust version reading from pyproject.toml
-          # (Keeping the same robust logic)
           VERSION_CMD=""
           if python -c "import sys; sys.exit(0) if sys.version_info >= (3, 11) else sys.exit(1)"; then
               if python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
@@ -83,84 +71,76 @@ jobs:
           echo "Project version found: ${PROJECT_VERSION}"
 
       - name: Install Python Build Dependencies & Project
+        # ... (this step remains the same - installs extras after base install) ...
         run: |
           python -m pip install --upgrade pip
           pip install build setuptools wheel
           echo "Installing/Upgrading PySide6 (pinned)..."
-          pip install --upgrade "PySide6==6.8.3" # Use consistent latest stable PySide
-          pip show PySide6 # Verify
+          pip install --upgrade "PySide6==6.8.3"
+          pip show PySide6
           echo "Installing project dependencies..."
           pip install .
           echo "Installing optional dependencies [notifications]..."
-          pip install ".[notifications]"
+          pip install ".[notifications]" # This step should now succeed
 
       - name: Build AppImage using build.sh
+        # ... (this step remains the same) ...
         run: |
           chmod +x ./build.sh
           echo "Running build script on ${{ matrix.os }}..."
           ./build.sh --appimage
 
       - name: Determine and Prepare AppImage Filename for Upload
+        # ... (this step remains the same) ...
         id: prepare_appimage
         run: |
           VERSION="${{ steps.get_project_version.outputs.project_version }}"
           if [ -z "$VERSION" ]; then echo "ERROR: Project version is empty."; exit 1; fi
-
-          # Create an OS tag (e.g., ubuntu2004, ubuntu2404)
-          OS_TAG=$(echo "${{ matrix.os }}" | sed -e 's/ubuntu-//' -e 's/\.//g') # This automatically handles 24.04
-
+          OS_TAG=$(echo "${{ matrix.os }}" | sed -e 's/ubuntu-//' -e 's/\.//g')
           ORIGINAL_FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
           NEW_FILENAME="chromadesk-${VERSION}-x86_64-${OS_TAG}.AppImage"
-
           echo "Checking for original file: ${ORIGINAL_FILENAME}"
           if [[ ! -f "${ORIGINAL_FILENAME}" ]]; then
             echo "ERROR: Expected AppImage file ${ORIGINAL_FILENAME} not found after build!"
             ls -lAh . ; ls -l *.AppImage
             exit 1
           fi
-
           echo "Renaming ${ORIGINAL_FILENAME} to ${NEW_FILENAME}"
           mv "${ORIGINAL_FILENAME}" "${NEW_FILENAME}"
-
           echo "filename=${NEW_FILENAME}" >> $GITHUB_OUTPUT
           echo "AppImage prepared for upload: ${NEW_FILENAME}"
 
       - name: Upload AppImage Artifact
+        # ... (this step remains the same) ...
         uses: actions/upload-artifact@v4
         with:
-          name: chromadesk-appimage-${{ matrix.os }} # Unique artifact name per OS build
-          path: ${{ steps.prepare_appimage.outputs.filename }} # Upload the renamed file
-          retention-days: 1 # Keep artifacts for 1 day
+          name: chromadesk-appimage-${{ matrix.os }}
+          path: ${{ steps.prepare_appimage.outputs.filename }}
+          retention-days: 1
 
-  # Job to create the GitHub Release after all builds are complete
   release:
+    # ... (release job remains the same) ...
     name: Create GitHub Release
-    needs: build # Depends on the successful completion of ALL matrix builds
-    runs-on: ubuntu-latest # Needs a basic runner to download artifacts and call API
+    needs: build
+    runs-on: ubuntu-latest
 
     steps:
       - name: Download all AppImage artifacts
         uses: actions/download-artifact@v4
         with:
-          # Download all artifacts from the workflow run into 'appimages' directory
           path: appimages
 
       - name: List downloaded artifacts
         run: |
           echo "Downloaded artifacts structure:"
           ls -lR appimages/
-          # Expected structure: appimages/<artifact-name>/<filename>
-          # e.g., appimages/chromadesk-appimage-ubuntu-20.04/chromadesk-X.Y.Z-x86_64-ubuntu2004.AppImage
-          # e.g., appimages/chromadesk-appimage-ubuntu-24.04/chromadesk-X.Y.Z-x86_64-ubuntu2404.AppImage
 
       - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Use glob to upload all AppImage files found within the download directory structure
           files: appimages/*/*.AppImage
-          tag_name: ${{ github.ref_name }} # Use the tag that triggered workflow
+          tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }} (Multi-Build LTS)
-          # Updated body to reflect 20.04 vs 24.04 builds
           body: |
             Automated AppImage release for ChromaDesk ${{ github.ref_name }}.
 
@@ -171,6 +151,6 @@ jobs:
 
             Please download the version appropriate for your Linux distribution.
           draft: false
-          prerelease: false # Set to true if these are pre-releases
+          prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
