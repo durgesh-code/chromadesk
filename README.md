@@ -24,9 +24,18 @@ A modern wallpaper management application for 🐧 Linux/GNOME desktop environme
 | ![Bing Today](data/screenshots/app-1.png)            | ![History](data/screenshots/app-2.png)              | ![Custom Sources](data/screenshots/app-3.png)         |
 
 ## Installation 💻
-### Prerequisites
-- [**FUSE**](https://github.com/appimage/appimagekit/wiki/fuse)
+### Prerequisites  
 
+- FUSE  
+
+FUSE is required for running AppImages and other filesystem-related operations.  
+To install FUSE on Ubuntu (22.04 or later), run the following commands:  
+
+```bash
+sudo add-apt-repository universe
+sudo apt install libfuse2
+```
+For detailed installation instructions, refer to the FUSE [**Installation Guide**](https://github.com/appimage/appimagekit/wiki/fuse).
 
 ### Recommended Method: AppImage 🚀
 
