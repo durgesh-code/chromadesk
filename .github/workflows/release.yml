@@ -1,18 +1,25 @@
+# .github/workflows/release.yml
+
 name: Build and Release AppImage
 
 on:
   push:
     tags:
       - 'v*' # Trigger on tags like v0.1.0, v1.0.0 etc.
+  # Allow manual triggering for testing
+  workflow_dispatch:
 
 permissions:
   contents: write # Required to create releases and upload assets
 
 jobs:
   build-release:
-    name: Build and Release ChromaDesk AppImage
-    # Use an older LTS release for better GLIBC compatibility.
-    runs-on: ubuntu-20.04
+    name: Build and Release ChromaDesk AppImage (on Ubuntu 22.04)
+
+    # --- THIS IS THE MODIFIED LINE ---
+    # Specifies that this job should run on an Ubuntu 22.04 runner provided by GitHub Actions.
+    runs-on: ubuntu-22.04
+    # --- END OF MODIFIED LINE ---
 
     steps:
       - name: Checkout code
@@ -21,19 +28,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Specify your project's Python version if different
+          python-version: '3.11' # Or your project's specific version
 
       - name: Install System Build Dependencies
         run: |
           sudo apt-get update
+          # libfuse2 is often needed for AppImage creation/compatibility tools
           sudo apt-get install -y --no-install-recommends \
             patchelf \
             desktop-file-utils \
             libfuse2 \
             fakeroot \
             libdbus-1-dev \
-            pkg-config # Ensure pkg-config is installed
-            # appimagetool is not in standard repos, download manually
+            pkg-config
+            # appimagetool will be downloaded manually
 
       - name: Download and Install appimagetool
         run: |
@@ -44,64 +52,112 @@ jobs:
           sudo mv appimagetool.AppImage /usr/local/bin/appimagetool
           echo "appimagetool installed to /usr/local/bin/appimagetool"
 
-      - name: Get Project Version from pyproject.toml
+      - name: Get Project Version
         id: get_project_version
         run: |
-          # --- Check which version key exists in pyproject.toml --- 
-          # Assuming standard [project] table or [tool.poetry]
+          # Robust version reading from pyproject.toml (supports project/poetry tables and Python 3.11+ tomllib or older tomli)
           VERSION_CMD=""
-          if python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
-            VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
-            echo "Reading version from [project][version]"
-          elif python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
-            VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
-            echo "Reading version from [tool][poetry][version]"
+          if python -c "import sys; sys.exit(0) if sys.version_info >= (3, 11) else sys.exit(1)"; then
+              # Python 3.11+ has built-in tomllib
+              if python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+                  echo "Reading version from [project][version] using tomllib"
+              elif python -c "import tomllib; data=tomllib.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
+                  VERSION_CMD="import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
+                  echo "Reading version from [tool][poetry][version] using tomllib"
+              else
+                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (Python 3.11+)"
+                  cat pyproject.toml # Print file content for debugging
+                  exit 1
+              fi
           else
-            echo "ERROR: Could not find [project][version] or [tool][poetry][version] in pyproject.toml"
-            exit 1
+              # Older Python, try tomli (install if necessary)
+              pip install tomli
+              if python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'project' in data and 'version' in data['project'] else exit(1)"; then
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])"
+                  echo "Reading version from [project][version] using tomli"
+              elif python -c "import tomli; data=tomli.load(open('pyproject.toml', 'rb')); exit(0) if 'tool' in data and 'poetry' in data['tool'] and 'version' in data['tool']['poetry'] else exit(1)"; then
+                  VERSION_CMD="import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['tool']['poetry']['version'])"
+                  echo "Reading version from [tool][poetry][version] using tomli"
+              else
+                  echo "ERROR: Could not find project or tool.poetry version in pyproject.toml (tomli)"
+                  cat pyproject.toml # Print file content for debugging
+                  exit 1
+              fi
           fi
-          
+
           PROJECT_VERSION=$(python -c "${VERSION_CMD}")
+          if [ -z "$PROJECT_VERSION" ]; then
+             echo "ERROR: Failed to extract project version."
+             exit 1
+          fi
           echo "project_version=${PROJECT_VERSION}" >> $GITHUB_OUTPUT
           echo "Project version found: ${PROJECT_VERSION}"
-          # --- End version check --- 
+
 
       - name: Install Python Build Dependencies & Project
         run: |
           python -m pip install --upgrade pip
           # Install build tools
-          pip install build setuptools wheel 
-          # Install project and its dependencies
-          pip install . # Installs dependencies from pyproject.toml
+          pip install build setuptools wheel
+          # Explicitly install/upgrade PySide6 first (pinning to ensure latest known stable)
+          echo "Installing/Upgrading PySide6..."
+          pip install --upgrade "PySide6==6.8.3" # Pin to the confirmed latest stable version
+          echo "Verifying PySide6 installation..."
+          pip show PySide6 # Display installed version for confirmation
+          echo "Installing project and its dependencies..."
+          # Install project and its core dependencies (will use the pinned PySide6)
+          pip install .
+          # Install optional dependencies if needed by build.sh or runtime
+          echo "Installing optional dependencies [notifications]..."
+          pip install ".[notifications]"
+
 
       - name: Build AppImage using build.sh
         run: |
+          # Ensure build.sh is executable
           chmod +x ./build.sh
+          # Run the build script, telling it to create the AppImage
+          # Use --debug flag on build.sh if more verbose output is needed from the script itself
           ./build.sh --appimage
 
       - name: Determine AppImage Filename
         id: get_appimage_filename
         run: |
-          # VERSION="${{ github.ref_name }}" # Get tag like v0.2.0
-          # VERSION="${VERSION#v}" # Remove leading 'v' -> 0.2.0
-          VERSION="${{ steps.get_project_version.outputs.project_version }}" # Use version from pyproject.toml
+          # Use the version obtained from pyproject.toml earlier
+          VERSION="${{ steps.get_project_version.outputs.project_version }}"
+          # Ensure VERSION is not empty
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Project version is empty. Cannot determine filename."
+            exit 1
+          fi
           FILENAME="chromadesk-${VERSION}-x86_64.AppImage"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
-          echo "Checking for file: ${FILENAME} (using version ${VERSION} from project file)"
+          echo "Checking for expected file: ${FILENAME}"
+          # Verify the file was actually created by build.sh in the root directory
           if [[ ! -f "${FILENAME}" ]]; then
-            echo "ERROR: Expected AppImage file ${FILENAME} not found!"
+            echo "ERROR: Expected AppImage file ${FILENAME} not found in root after build!"
+            echo "Listing current directory contents:"
+            ls -lAh .
+            echo "Listing .AppImage files found:"
             ls -l *.AppImage # List found AppImages for debugging
             exit 1
           fi
+          echo "AppImage file ${FILENAME} found."
 
       - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
+          # Use the dynamically determined filename
           files: ${{ steps.get_appimage_filename.outputs.filename }}
           tag_name: ${{ github.ref_name }} # Use the tag that triggered workflow
-          name: Release ${{ github.ref_name }}
-          body: "Automated AppImage release for ChromaDesk ${{ github.ref_name }}"
+          # Add a note about the build environment to the release title
+          name: Release ${{ github.ref_name }} (Built on Ubuntu 22.04)
+          body: | # Use multi-line body for clarity
+            Automated AppImage release for ChromaDesk ${{ github.ref_name }}.
+
+            **Important Note:** This build was created on **Ubuntu 22.04**. It requires a newer GLIBC version (likely 2.35 or higher) and may **not** run on older Linux distributions like Ubuntu 20.04 or Debian 11.
           draft: false
           prerelease: false # Set to true if these are pre-releases
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Provided by GitHub Actions
