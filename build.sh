@@ -245,9 +245,36 @@ if [ $? -eq 0 ]; then
         # echo "DEBUG: Wrote intended AppImage path ($APPIMAGE_FINAL_PATH) to $BUILD_DIR/appimage_exec_path.txt" # Debug
         # ------------------------ #
 
-        # Create a symbolic link to the executable in the root directory as AppRun
-        echo -e "${YELLOW}Creating AppRun symlink...${NC}"
-        ln -sf "usr/bin/chromadesk" "$BUILD_DIR/AppRun"
+        # Create a proper AppRun script instead of a symlink
+        echo -e "${YELLOW}Creating AppRun script...${NC}"
+        cat > "$BUILD_DIR/AppRun" << EOF
+#!/bin/bash
+# ChromaDesk AppRun script
+# This script properly locates and runs the chromadesk executable within the AppImage structure
+
+# Get the directory where this AppRun script is located
+HERE="\$(dirname "\$(readlink -f "\${0}")")"
+
+# Environment setup
+export PATH="\${HERE}/usr/bin:\${PATH}"
+export LD_LIBRARY_PATH="\${HERE}/usr/lib:\${LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="\${HERE}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# Detect desktop environment and set compatibility flags
+if [ "\$XDG_SESSION_TYPE" = "wayland" ]; then
+    echo "Detected Wayland session - using strict compatibility mode"
+    export GDK_BACKEND=wayland
+    export QT_QPA_PLATFORM=wayland
+    echo "Launching ChromaDesk with cross-platform compatibility settings"
+else
+    echo "Detected X11 session - using standard launch mode"
+fi
+
+# Execute the ChromaDesk binary from within the AppImage structure
+exec "\${HERE}/usr/bin/chromadesk" "\$@"
+EOF
+        # Make the AppRun script executable
+        chmod +x "$BUILD_DIR/AppRun"
         
         # Display version information
         echo -e "${GREEN}Built version: ${YELLOW}$VERSION${NC}"
