@@ -52,37 +52,25 @@ jobs:
           mypy . 2>&1 | tee mypy_output.txt
         continue-on-error: true
 
-      - name: Post Comment on PR if any check fails
+      - name: Collect Linter Errors
+        run: |
+          echo "## Code quality checks failed!" > lint_errors.md
+          for tool in black flake8 isort mypy; do
+            if [ -s ${tool}_output.txt ]; then
+              echo "<details><summary>${tool^} Errors</summary>" >> lint_errors.md
+              echo '```' >> lint_errors.md
+              cat ${tool}_output.txt >> lint_errors.md
+              echo '```' >> lint_errors.md
+              echo "</details>" >> lint_errors.md
+            fi
+          done
+          echo "Please fix these issues before merging." >> lint_errors.md
+
+      - name: Post Comment on PR
         if: always()
         uses: mshick/add-pr-comment@v2
         with:
-          message: |
-            :warning: **Code quality checks failed!**
-            <details>
-            <summary>Black Errors</summary>
-            ```
-            $(cat black_output.txt)
-            ```
-            </details>
-            <details>
-            <summary>Flake8 Errors</summary>
-            ```
-            $(cat flake8_output.txt)
-            ```
-            </details>
-            <details>
-            <summary>Isort Errors</summary>
-            ```
-            $(cat isort_output.txt)
-            ```
-            </details>
-            <details>
-            <summary>Mypy Errors</summary>
-            ```
-            $(cat mypy_output.txt)
-            ```
-            </details>
-            Please fix these issues before merging.
+          message-path: lint_errors.md
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fail the job if any check fails
